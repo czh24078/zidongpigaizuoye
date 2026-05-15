@@ -138,13 +138,15 @@
                             </div>
                             <div class="preview-grid">
                                 <div v-for="(url, index) in previewUrls" :key="index" class="preview-item">
-                                    <el-image 
-                                        :src="url" 
-                                        fit="cover" 
-                                        class="preview-image" 
-                                        :preview-src-list="previewUrls" 
-                                        :initial-index="index"
-                                        hide-on-click-modal
+                                    <el-image
+                                            :src="url"
+                                            fit="cover"
+                                            class="preview-image"
+                                            :preview-src-list="previewUrls"
+                                            :initial-index="index"
+                                            hide-on-click-modal
+                                            preview-teleported
+                                            z-index="3000"
                                     />
                                     <div class="preview-overlay">
                                         <el-button type="danger" circle size="small" @click.stop="removeFile(index)">
@@ -157,25 +159,15 @@
 
                         <!-- 提交按钮 -->
                         <div class="submit-area">
-                            <el-button 
-                                type="primary" 
-                                size="large" 
+                            <el-button
+                                type="primary"
+                                size="large"
                                 :disabled="uploadFiles.length === 0 || isLoading"
                                 :loading="isLoading && !isStreaming"
                                 @click="submitCorrection"
                             >
                                 <el-icon><check /></el-icon>
                                 开始批改
-                            </el-button>
-                            <el-button 
-                                type="success" 
-                                size="large" 
-                                :disabled="uploadFiles.length === 0 || isLoading"
-                                :loading="isLoading && isStreaming"
-                                @click="submitCorrectionStream"
-                            >
-                                <el-icon><video-play /></el-icon>
-                                流式批改
                             </el-button>
                         </div>
                     </el-card>

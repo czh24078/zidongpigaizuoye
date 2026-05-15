@@ -136,11 +136,17 @@ body {
 
 .main-row {
     margin-bottom: 24px;
+    /* 🔥 新增：使用 flexbox 实现等高布局 */
+    display: flex;
+    align-items: stretch;
 }
 
 .left-col,
 .right-col {
     margin-bottom: 0;
+    /* 🔥 新增：确保列高度一致 */
+    display: flex;
+    flex-direction: column;
 }
 
 /* ==================== 卡片公共样式 ==================== */
@@ -150,6 +156,14 @@ body {
     box-shadow: var(--shadow-sm);
     transition: var(--transition);
 }
+
+.upload-card,
+.result-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
 
 .el-card:hover {
     box-shadow: var(--shadow-md);
@@ -191,6 +205,8 @@ body {
     background: linear-gradient(180deg, #fafbff 0%, #f5f7fa 100%);
     position: relative;
     overflow: hidden;
+    /* 🔥 新增：防止上传区域过度拉伸 */
+    flex-shrink: 0;
 }
 
 .upload-area::before {
@@ -250,8 +266,12 @@ body {
 
 /* ==================== 图片预览 ==================== */
 .preview-section {
-    margin-top: 20px;
+    margin-top: 0; /* 🔥 修改：由 card__body 的 gap 控制间距 */
     animation: fadeInUp 0.4s ease;
+    /* 🔥 新增：预览区域可滚动 */
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0; /* 允许 flex 子项收缩 */
 }
 
 .preview-header {
@@ -288,6 +308,24 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    /*  优化：防止图片在加载或交互时闪烁 */
+    display: block;
+    user-select: none;
+}
+
+.el-image-viewer__wrapper {
+    /* 确保预览窗口始终可见，除非用户主动关闭 */
+    pointer-events: auto !important;
+}
+
+.el-image-viewer__canvas img {
+    /* 防止图片在鼠标静止时被误判为失焦 */
+    pointer-events: auto;
+    cursor: grab;
+}
+
+.el-image-viewer__canvas img:active {
+    cursor: grabbing;
 }
 
 .preview-overlay {
@@ -302,20 +340,28 @@ body {
     justify-content: center;
     opacity: 0;
     transition: opacity 0.3s ease;
+    /*  优化：确保遮罩层不干扰图片本身的点击预览 */
+    pointer-events: none;
 }
 
 .preview-item:hover .preview-overlay {
     opacity: 1;
 }
 
-/* ==================== 提交按钮区域 ==================== */
-.submit-area {
-    display: flex;
-    gap: 12px;
-    margin-top: 20px;
-    justify-content: center;
-    flex-wrap: wrap;
+.preview-overlay .el-button {
+    pointer-events: auto;
 }
+
+/* ==================== 提交按钮区域 ==================== */
+.preview-section {
+    margin-top: 0; /* 🔥 修改：由 card__body 的 gap 控制间距 */
+    animation: fadeInUp 0.4s ease;
+    /* 🔥 新增：预览区域可滚动 */
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0; /* 允许 flex 子项收缩 */
+}
+
 
 .submit-area .el-button {
     min-width: 130px;
@@ -331,13 +377,68 @@ body {
 
 /* ==================== 结果展示区域 ==================== */
 .result-card {
-    height: 100%;
     min-height: 500px;
 }
 
 .result-card .el-card__body {
     min-height: 420px;
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    /* 🔥 新增：确保内容区域填充剩余空间 */
+    flex: 1;
 }
+
+/* 🔥 新增：上传卡片也使用相同的样式逻辑 */
+.upload-card {
+    min-height: 500px;
+}
+
+.upload-card .el-card__body {
+    /* 🔥 关键：与结果卡片保持一致的最大高度和滚动行为 */
+    max-height: 70vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    /* 🔥 确保内容区域填充剩余空间 */
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+/* 自定义滚动条样式 - Webkit浏览器 */
+.upload-card .el-card__body::-webkit-scrollbar,
+.result-card .el-card__body::-webkit-scrollbar {
+    width: 8px;
+}
+
+.upload-card .el-card__body::-webkit-scrollbar-track,
+.result-card .el-card__body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.upload-card .el-card__body::-webkit-scrollbar-thumb,
+.result-card .el-card__body::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #409eff 0%, #1a56db 100%);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+
+.upload-card .el-card__body::-webkit-scrollbar-thumb:hover,
+.result-card .el-card__body::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, #66b1ff 0%, #3b82f6 100%);
+}
+
+/* Firefox滚动条样式 */
+.upload-card .el-card__body,
+.result-card .el-card__body {
+    scrollbar-width: thin;
+    scrollbar-color: #409eff #f1f1f1;
+}
+
 
 .empty-result,
 .loading-result {
@@ -350,6 +451,8 @@ body {
 .loading-result {
     padding: 20px;
 }
+
+
 
 /* ==================== Markdown 内容美化 ==================== */
 .markdown-body {
@@ -476,9 +579,71 @@ body {
 
 .markdown-body strong {
     color: var(--text-primary);
-    font-weight: 600;
+    font-weight: 700;
 }
 
+/* 🔥 优化：批改结果列表样式（防止流式输出跳动） */
+.markdown-body ul li,
+.markdown-body ol li {
+    margin-bottom: 12px;
+    line-height: 1.6;
+    padding-left: 8px;
+    /* 防止流式输出时列表项高度跳动 */
+    min-height: 1.6em;
+}
+
+/* 突出显示分数和判定 */
+.markdown-body li strong {
+    color: var(--primary-color);
+    font-weight: 700;
+}
+
+/* 针对解析部分的缩进优化 */
+.markdown-body li ul,
+.markdown-body li ol {
+    margin-top: 6px;
+    padding-left: 20px;
+    list-style-type: disc; /* 确保子列表有圆点标记 */
+}
+
+/* 子列表项样式微调 */
+.markdown-body li li {
+    margin-bottom: 4px;
+    font-size: 0.95em;
+    color: var(--text-regular);
+}
+
+/* 如果 AI 输出的是表格，确保表格美观且支持滚动 */
+.markdown-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    display: block; /* 允许在小屏幕上滚动 */
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.markdown-body th,
+.markdown-body td {
+    padding: 12px 16px;
+    border: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.markdown-body th {
+    background: linear-gradient(180deg, #f0f5ff 0%, #e8f0fe 100%);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* 突出显示分数 */
+.markdown-body td strong {
+    color: var(--primary-color);
+    font-size: 1.1em;
+}
 /* ==================== 历史题目列表（单题展示） ==================== */
 .question-history-list {
     display: flex;

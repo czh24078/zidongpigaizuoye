@@ -18,39 +18,47 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 
 # 批改作业（无标准答案）
-SYSTEM_PROMPT = """你是一位经验丰富的专业教师，擅长批改各科作业。请按照以下要求批改学生提交的作业：
+SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
 
-1. 总体评价：给出总分（满分100分）和总体评语
-2. 逐题分析：对每道题目进行分析
-   - 标注正确/错误
-   - 如果错误，指出错误原因
-   - 给出正确答案和解题思路
-3. 改进建议：针对学生的薄弱点给出学习建议
+【核心禁令】
+1. **严禁丢弃数字**：题目中的质量、体积、密度等数值必须完整保留，严禁出现 ".kg"、"/" 等残缺表达。如果 OCR 识别不清，请根据物理常识补全（如 0.54kg）。
+2. **严禁省略分数**：每题得分必须明确写出，如 [15/20]。
 
-请使用Markdown格式输出，结构清晰，语言友好鼓励。"""
+【输出模板】
+## 1. 识别题目
+1. (完整题干，确保数字准确)
+2. (完整题干，确保数字准确)
+
+## 2. 评分
+总分：**85 / 100**
+
+## 3. 答案及解析
+- **第1题**：**[15/20]** ✅ 
+  - **答案**：不能。
+  - **解析**：G=mg=0.54kg×10N/kg=5.4N > 5N，超量程。
+- **第2题**：**[10/20]** ❌ 
+  - **答案**：28N。
+  - **解析**：体积单位错误，应为 m³。
+
+【注意】
+- 即使为了简洁，也不能牺牲数字的准确性。
+- 解析要简短，但公式中的数字必须齐全。
+"""
 
 # 从试题图片中提取题目并生成标准答案（图片模式）
-EXTRACT_EXAM_PROMPT = """你是一位严谨的学科老师，擅长审题与出标准答案。请仔细识别提供的所有图片中的题目与答案信息，并为每道题目整理出权威的标准答案。
+EXTRACT_EXAM_PROMPT = """你是一位严谨的学科老师。请识别图片中的题目并生成标准答案。
 
-说明：
-- 可能提供 1~2 张图片。它们可能是“题目卷”（包含题干）、“答案卷”（只写答案）、或“题目+答案合在一起的试卷”。
-- 如果多张图都包含同一题号的信息，请综合分析：优先从题目卷提取“题干”，从答案卷提取“标准答案”。
-- 如果某张图上某题只有答案、没有题干，请根据题号与另一张图匹配，补全题干。
-- 如果某题完全缺少题干，请将 question_text 留空字符串，等待用户后续手动补充。
+【要求】
+1. 智能纠正识别错误，直接输出最终题目内容。
+2. 严格以 JSON 数组返回，不要输出任何解释性文字。
 
-要求：
-1. 忠实还原每道题目的题号与题干文本（公式可用 LaTeX 或文字描述）。
-2. 为每题给出明确、正确的“标准答案”。
-3. 为每题补充简要的“解题分析/要点”（可选，若题目较简单可留空字符串）。
-4. 严格以 JSON 数组返回，不要输出任何其它解释、前后缀或代码块围栏；若必须使用代码块，请使用 ```json 包裹。
-
-JSON 结构（每个元素必须包含以下字段）：
+JSON 结构：
 [
   {
     "question_no": "1",
-    "question_text": "题目原文",
+    "question_text": "修正后的题干",
     "standard_answer": "标准答案",
-    "analysis": "解题要点（可为空字符串）"
+    "analysis": "简要解题要点"
   }
 ]
 """
@@ -81,79 +89,82 @@ JSON 结构（每个元素必须包含以下字段）：
 """
 
 # 基于标准答案的结构化批改（图片模式）
-CORRECT_WITH_ANSWERS_PROMPT = """你是一位严谨专业的学科老师，正在根据已知的“标准答案”批改学生的作业图片。
+CORRECT_WITH_ANSWERS_PROMPT = """你是专业教师，根据标准答案批改作业。
 
-你将收到：
-1. 一张学生作业图片（学生的书写内容）；
-2. 本次试题对应的标准答案列表（JSON）。
+【严格禁令】
+1. 禁止提及OCR或识别过程。
+2. 仅返回 JSON，无任何多余文字。
 
-请严格按照标准答案逐题批改，识别学生作答并判定对错。输出必须是 JSON，不要任何多余文字说明，结构如下：
-
+输出 JSON 格式：
 {
   "total_score": 85,
   "full_score": 100,
-  "summary": "总体评语",
+  "summary": "一句话评语",
   "details": [
     {
       "question_no": "1",
-      "question_text": "题目原文",
-      "student_answer": "学生作答（如无法识别，写 '未作答' 或 '无法识别'）",
+      "question_text": "题干",
+      "student_answer": "学生作答",
       "standard_answer": "标准答案",
       "is_correct": true,
       "score": 10,
       "full_score": 10,
-      "analysis": "详细批改分析：学生哪里正确/错误、错误原因、正确思路"
+      "analysis": "极简解析（20字内）"
     }
   ],
-  "suggestions": "总体改进建议"
+  "suggestions": "建议"
 }
-
-若必须使用代码块，请使用 ```json 包裹。除 JSON 外不要输出任何内容。"""
+"""
 
 # 基于标准答案的结构化批改（OCR 文字模式）
-CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是一位严谨专业的学科老师，正在根据已知的“标准答案”批改学生的作业。
+CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是专业教师，根据标准答案简洁批改OCR识别的作业。
 
-你将收到：
-1. 学生作业的 OCR 识别文字（通过光学字符识别从学生作业图片中提取）；
-2. 本次试题对应的标准答案列表（JSON）。
-
-注意：OCR 识别可能存在误差（空格、符号错误、顺序紊乱等），请结合上下文智能纠正后再批改。
-
-请严格按照标准答案逐题批改，识别学生作答并判定对错。输出必须是 JSON，不要任何多余文字说明，结构如下：
-
+输出JSON格式（严格控制长度）：
 {
   "total_score": 85,
   "full_score": 100,
-  "summary": "总体评语",
+  "summary": "简短评语（30字内）",
   "details": [
     {
       "question_no": "1",
-      "question_text": "题目原文",
-      "student_answer": "学生作答（如无法识别，写 '未作答' 或 '无法识别'）",
+      "question_text": "题干简述",
+      "student_answer": "学生答案",
       "standard_answer": "标准答案",
       "is_correct": true,
       "score": 10,
       "full_score": 10,
-      "analysis": "详细批改分析：学生哪里正确/错误、错误原因、正确思路"
+      "analysis": "简要分析（20字内）"
     }
   ],
-  "suggestions": "总体改进建议"
+  "suggestions": "1-2条建议（每条15字内）"
 }
 
-若必须使用代码块，请使用 ```json 包裹。除 JSON 外不要输出任何内容。"""
+要求：
+- 智能纠正OCR错误
+- analysis字段必须简短
+- 仅返回JSON，无其他文字"""
 
 # 无标准答案批改（OCR 文字模式）
-SYSTEM_PROMPT_OCR = """你是一位经验丰富的专业教师，擅长批改各科作业。以下是通过 OCR 从学生作业图片中识别出的文字内容，请按照以下要求批改：
+SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
 
-1. 总体评价：给出总分（满分100分）和总体评语
-2. 逐题分析：对每道题目进行分析
-   - 标注正确/错误
-   - 如果错误，指出错误原因
-   - 给出正确答案和解题思路
-3. 改进建议：针对学生的薄弱点给出学习建议
+【绝对禁令】
+1. **禁止输出残缺数字**：如 ".kg"、"N"、"/" 是不允许的。必须补全为 "0.54kg"、"5N"、"15/20"。
+2. **禁止提及 OCR 过程**。
 
-注意：OCR 识别可能存在误差，请结合上下文智能纠正后再批改。
-请使用Markdown格式输出，结构清晰，语言友好鼓励。"""
+【输出结构】
+## 1. 识别题目
+(列出修正后的完整题目，确保每个数字都清晰可见)
+
+## 2. 评分
+总分：**X / 100**
+
+## 3. 答案及解析
+- **第1题**：**[得分/满分]** [判定]
+  - **答案**：[正确结果]
+  - **解析**：[30字内核心理由，包含关键计算步骤]
+
+请直接输出结果，确保公式和数值的完整性。"""
+
 
 
 def _strip_json_fence(text: str) -> str:
@@ -466,7 +477,7 @@ class HomeworkAgent:
         return self._render_details_markdown(parsed)
 
     def _render_details_markdown(self, parsed: dict) -> str:
-        """把结构化 JSON 转成易读的 Markdown。"""
+        """把结构化 JSON 转成 Markdown，包含每题得分。"""
         total = parsed.get("total_score")
         full = parsed.get("full_score") or 100
         summary = parsed.get("summary") or ""
@@ -474,29 +485,40 @@ class HomeworkAgent:
         details = parsed.get("details") or []
 
         lines = ["# 作业批改报告"]
-        if total is not None:
-            lines.append(f"\n## 总分：{total} / {full}\n")
-        if summary:
-            lines.append(f"> {summary}\n")
 
-        lines.append("\n## 逐题批改\n")
-        lines.append("| 题号 | 学生答案 | 标准答案 | 判定 | 得分 | 分析 |")
-        lines.append("|------|----------|----------|------|------|------|")
+        # 1. 识别题目部分（如果是带标准答案模式，通常题目已知，这里可以略过或简写）
+        if details:
+            lines.append("\n## 1. 识别题目")
+            for d in details:
+                lines.append(f"- **第{d.get('question_no')}题**：{d.get('question_text', '')}")
+
+        # 2. 评分
+        if total is not None:
+            lines.append(f"\n## 2. 评分\n总分：**{total} / {full}**")
+
+        if summary:
+            lines.append(f"\n> {summary}\n")
+
+        # 3. 答案及解析（表格形式展示每题得分）
+        lines.append("\n## 3. 答案及解析\n")
+        lines.append("| 题号 | 判定 | 每题得分 | 答案与解析 |")
+        lines.append("|------|------|----------|------------|")
         for d in details:
             no = str(d.get("question_no", "")).replace("|", "\\|")
-            sa = str(d.get("student_answer", "")).replace("\n", " ").replace("|", "\\|")
-            std = str(d.get("standard_answer", "")).replace("\n", " ").replace("|", "\\|")
             ok = "✅" if d.get("is_correct") else "❌"
             sc = d.get("score")
             fs = d.get("full_score")
-            sc_str = f"{sc}/{fs}" if sc is not None and fs is not None else (str(sc) if sc is not None else "-")
-            analysis = str(d.get("analysis", "")).replace("\n", " ").replace("|", "\\|")
-            lines.append(f"| {no} | {sa} | {std} | {ok} | {sc_str} | {analysis} |")
+            sc_str = f"{sc}/{fs}" if sc is not None and fs is not None else "-"
+
+            # 组合答案和解析
+            content = f"**正确**: {d.get('standard_answer', '')}<br>**解析**: {str(d.get('analysis', ''))[:40]}"
+            content = content.replace("|", "\\|").replace("\n", " ")
+
+            lines.append(f"| {no} | {ok} | **{sc_str}** | {content} |")
 
         if suggestions:
             lines.append(f"\n## 改进建议\n\n{suggestions}\n")
 
-        lines.append("\n> 本次批改由 AI 根据标准答案自动完成，如有疑问请咨询任课老师。")
         return "\n".join(lines)
 
     # ------------------------------------------------------------------

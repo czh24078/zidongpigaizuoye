@@ -246,105 +246,6 @@ const app = createApp({
             }
         }
 
-        /**
-         * 流式批改（SSE 模式）
-         */
-        async function submitCorrectionStream() {
-            if (uploadFiles.value.length === 0) {
-                showMessage('请先上传图片', 'warning');
-                return;
-            }
-
-            isLoading.value = true;
-            isStreaming.value = true;
-            correctionResult.value = '';
-
-            const formData = new FormData();
-            formData.append('file', uploadFiles.value[0]);
-
-            try {
-                const response = await fetch('/api/correct/stream', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || errorData.message || `HTTP ${response.status}`);
-                }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // 保留未完整的一行
-
-                    for (const line of lines) {
-                        const trimmed = line.trim();
-                        if (trimmed.startsWith('data:')) {
-                            const data = trimmed.slice(5).trim();
-                            if (data === '[DONE]') {
-                                continue;
-                            }
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.content) {
-                                    correctionResult.value += parsed.content;
-                                } else if (parsed.result) {
-                                    correctionResult.value += parsed.result;
-                                } else if (typeof parsed === 'string') {
-                                    correctionResult.value += parsed;
-                                }
-                            } catch {
-                                // 如果不是 JSON，直接追加文本
-                                correctionResult.value += data;
-                            }
-                        } else if (trimmed) {
-                            // 非 SSE 格式，直接追加
-                            correctionResult.value += trimmed + '\n';
-                        }
-                    }
-                }
-
-                // 处理剩余缓冲区
-                if (buffer.trim()) {
-                    const trimmed = buffer.trim();
-                    if (trimmed.startsWith('data:')) {
-                        const data = trimmed.slice(5).trim();
-                        if (data !== '[DONE]') {
-                            try {
-                                const parsed = JSON.parse(data);
-                                if (parsed.content) {
-                                    correctionResult.value += parsed.content;
-                                } else if (parsed.result) {
-                                    correctionResult.value += parsed.result;
-                                }
-                            } catch {
-                                correctionResult.value += data;
-                            }
-                        }
-                    } else {
-                        correctionResult.value += trimmed;
-                    }
-                }
-
-                showMessage('流式批改完成', 'success');
-                await fetchHistory();
-            } catch (error) {
-                console.error('流式批改请求失败:', error);
-                showMessage(error.message || '流式批改请求失败，请稍后重试', 'error');
-            } finally {
-                isLoading.value = false;
-                isStreaming.value = false;
-            }
-        }
-
         // ==================== 历史记录方法 ====================
 
         /**
@@ -662,6 +563,7 @@ const app = createApp({
         });
 
         // ==================== 返回 ====================
+
         return {
             // 状态
             uploadFiles,
@@ -669,7 +571,7 @@ const app = createApp({
             correctionResult,
             renderedResult,
             isLoading,
-            isStreaming,
+            // Deleted:isStreaming,
             history,
             isDragOver,
             fileInput,
@@ -709,7 +611,7 @@ const app = createApp({
             removeFile,
             clearAllFiles,
             submitCorrection,
-            submitCorrectionStream,
+            // Deleted:submitCorrectionStream,
             fetchHistory,
             viewHistoryDetail,
             getScoreTagType,
