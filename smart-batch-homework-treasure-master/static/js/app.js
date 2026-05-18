@@ -246,6 +246,89 @@ const app = createApp({
             }
         }
 
+        /**
+         * 提交批改（流式输出模式）
+         */
+        async function submitCorrectionStream() {
+            if (uploadFiles.value.length === 0) {
+                showMessage('请先上传图片', 'warning');
+                return;
+            }
+
+            isLoading.value = true;
+            isStreaming.value = true;
+            correctionResult.value = '';
+
+            const formData = new FormData();
+            formData.append('file', uploadFiles.value[0]);
+            if (selectedExamId.value) {
+                formData.append('exam_id', selectedExamId.value);
+            }
+
+            try {
+                const response = await fetch('/api/correct/stream', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || '流式请求失败');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6).trim();
+                            if (!dataStr) continue;
+
+                            try {
+                                const data = JSON.parse(dataStr);
+
+                                if (data.event === 'start') {
+                                    console.log('开始批改:', data.message);
+                                    showMessage(data.message, 'info');
+                                } else if (data.event === 'progress') {
+                                    showMessage(data.message, 'info');
+                                } else if (data.event === 'content') {
+                                    correctionResult.value += data.text;
+                                } else if (data.event === 'result') {
+                                    if (correctionResult.value && !correctionResult.value.endsWith('\n\n')) {
+                                        correctionResult.value += '\n\n';
+                                    }
+                                    correctionResult.value += `### ${data.section || ''}\n- **得分**: ${data.score || '-'}\n- **详情**: ${data.detail || ''}\n\n`;
+                                } else if (data.event === 'summary') {
+                                    correctionResult.value += `\n\n---\n\n## 总结\n\n${data.message || ''}`;
+                                } else if (data.event === 'end') {
+                                    showMessage('批改完成', 'success');
+                                    await fetchHistory();
+                                }
+                            } catch (e) {
+                                console.error('解析流式数据失败:', e, dataStr);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('流式批改失败:', error);
+                showMessage(error.message || '流式批改失败，请稍后重试', 'error');
+            } finally {
+                isLoading.value = false;
+                isStreaming.value = false;
+            }
+        }
+
         // ==================== 历史记录方法 ====================
 
         /**
@@ -563,7 +646,6 @@ const app = createApp({
         });
 
         // ==================== 返回 ====================
-
         return {
             // 状态
             uploadFiles,
@@ -571,7 +653,7 @@ const app = createApp({
             correctionResult,
             renderedResult,
             isLoading,
-            // Deleted:isStreaming,
+            isStreaming,
             history,
             isDragOver,
             fileInput,
@@ -611,7 +693,7 @@ const app = createApp({
             removeFile,
             clearAllFiles,
             submitCorrection,
-            // Deleted:submitCorrectionStream,
+            submitCorrectionStream,
             fetchHistory,
             viewHistoryDetail,
             getScoreTagType,

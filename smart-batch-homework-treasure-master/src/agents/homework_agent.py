@@ -206,6 +206,7 @@ class HomeworkAgent:
         self.last_details: Optional[List[dict]] = None
         self._last_file_path = None
         self._last_filename = None
+        self._last_stream_result = ""
         self._ocr_enabled = config.OCR_ENABLED and ocr_available()
         if self._ocr_enabled:
             logger.info("OCR 已启用，将先提取文字再交给大模型")
@@ -533,6 +534,8 @@ class HomeworkAgent:
         else:
             raise ValueError("未提供文件路径，且没有缓存的上次文件路径")
 
+        full_content = ""
+
         # OCR 模式
         if self._ocr_enabled:
             ocr_text = self._ocr_single(file_path)
@@ -546,16 +549,14 @@ class HomeworkAgent:
                 messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
                 logger.info(f"流式批改使用 OCR 文字模式: {self._last_filename}")
-                full_content = ""
                 async for chunk in self.llm.astream(messages):
                     if chunk.content:
                         full_content += chunk.content
-                        yield chunk.content
+                        yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
                 self.last_score = self._extract_score(full_content)
+                self._last_stream_result = full_content
                 return
-            else:
-                logger.warning("OCR 未识别到文字，流式批改回退到图片模式")
 
         # 图片模式
         msg = self._build_image_message(
@@ -564,13 +565,13 @@ class HomeworkAgent:
         )
         messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
 
-        full_content = ""
         async for chunk in self.llm.astream(messages):
             if chunk.content:
                 full_content += chunk.content
-                yield chunk.content
+                yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
         self.last_score = self._extract_score(full_content)
+        self._last_stream_result = full_content
 
     def _extract_score(self, text: str) -> int:
         patterns = [

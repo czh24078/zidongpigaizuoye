@@ -169,6 +169,16 @@
                                 <el-icon><check /></el-icon>
                                 开始批改
                             </el-button>
+                            <el-button
+                                    type="success"
+                                    size="large"
+                                    :disabled="uploadFiles.length === 0 || isLoading"
+                                    :loading="isLoading && isStreaming"
+                                    @click="submitCorrectionStream"
+                            >
+                                <el-icon><video-play /></el-icon>
+                                流式批改
+                            </el-button>
                         </div>
                     </el-card>
                 </el-col>

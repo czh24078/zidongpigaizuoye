@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -18,6 +19,8 @@ from src.models.schemas import (
     UpdateAnswersRequest,
     CorrectionDetail,
 )
+
+logger = logging.getLogger(__name__)
 
 # 尝试导入 Agent，未就绪时使用 mock
 try:
@@ -359,34 +362,88 @@ async def correct_homework(
 
 
 @router.post("/correct/stream")
-async def correct_homework_stream(file: UploadFile = File(...)):
-    """流式批改（SSE），保持旧行为。"""
+async def correct_homework_stream(
+        file: UploadFile = File(...),
+        exam_id: Optional[str] = Form(None),
+):
+    """流式批改（SSE），支持标准答案比对。"""
     _validate_image_file(file)
     file_path = await _save_upload_file(file)
 
-    async def event_generator():
-        yield f"data: {chr(123)}\"event\": \"start\", \"message\": \"开始批改...\"{chr(125)}\n\n"
-        await asyncio.sleep(0.3)
+    exam: Optional[ExamResponse] = None
+    standard_answers = None
+    if exam_id:
+        exam = exam_store.get(exam_id)
+        if not exam:
+            raise HTTPException(status_code=404, detail="指定的试题不存在")
+        standard_answers = [q.model_dump() for q in exam.questions]
 
-        if AGENT_AVAILABLE and homework_agent is not None:
-            try:
-                if hasattr(homework_agent, "correct_stream"):
+    async def event_generator():
+        try:
+            yield f"data: {json.dumps({'event': 'start', 'message': '开始批改...'}, ensure_ascii=False)}\n\n"
+
+            full_content = ""
+
+            if AGENT_AVAILABLE and homework_agent is not None:
+                try:
                     async for chunk in homework_agent.correct_stream(file_path):
                         yield f"data: {chunk}\n\n"
-                else:
-                    for chunk in _mock_stream_chunks():
-                        yield f"data: {chunk}\n\n"
-                        await asyncio.sleep(0.2)
-            except Exception:
+                        # 累积内容用于保存历史
+                        try:
+                            chunk_data = json.loads(chunk)
+                            if chunk_data.get('event') == 'content':
+                                full_content += chunk_data.get('text', '')
+                        except:
+                            pass
+                except Exception as e:
+                    logger.error(f"流式批改失败: {e}")
+                    yield f"data: {json.dumps({'event': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+            else:
                 for chunk in _mock_stream_chunks():
                     yield f"data: {chunk}\n\n"
                     await asyncio.sleep(0.2)
-        else:
-            for chunk in _mock_stream_chunks():
-                yield f"data: {chunk}\n\n"
-                await asyncio.sleep(0.2)
+                    full_content += chunk
 
-        yield f"data: {chr(123)}\"event\": \"end\", \"message\": \"批改完成\"{chr(125)}\n\n"
+            yield f"data: {json.dumps({'event': 'end', 'message': '批改完成'}, ensure_ascii=False)}\n\n"
+
+            # 保存历史记录
+            score = getattr(homework_agent, "last_score", None) if AGENT_AVAILABLE else 85
+            details_objs = _details_from_dicts(
+                getattr(homework_agent, "last_details", None) or []
+            ) if AGENT_AVAILABLE else []
+
+            correction_id = str(uuid.uuid4())
+            created_at = datetime.now()
+
+            result_text = full_content or getattr(homework_agent, "_last_stream_result", "")
+
+            record_md = _build_record_markdown(
+                correction_id=correction_id,
+                filename=file.filename or "unknown",
+                exam=exam,
+                score=score,
+                details=details_objs,
+                result_markdown=result_text,
+                created_at=created_at,
+            )
+            _save_record_file(correction_id, record_md)
+
+            item = HistoryItem(
+                id=correction_id,
+                filename=file.filename or "unknown",
+                score=score,
+                summary=f"作业批改完成，总分 {score} 分。" + (f"（基于试题 {exam.filename}）" if exam else ""),
+                result=result_text,
+                exam_id=exam.id if exam else None,
+                details=details_objs or None,
+                record_path=None,
+                created_at=created_at,
+            )
+            correction_history.insert(0, item)
+
+        except Exception as e:
+            logger.error(f"流式生成器异常: {e}")
+            yield f"data: {json.dumps({'event': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

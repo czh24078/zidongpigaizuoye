@@ -19,6 +19,13 @@ class Config:
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 
+    # 性能优化配置
+    MODEL_MAX_TOKENS = int(os.getenv("MODEL_MAX_TOKENS", "2048"))  # 限制输出长度
+    MODEL_STREAMING = os.getenv("MODEL_STREAMING", "True").lower() == "true"  # 启用流式输出
+
 config = Config()
+
+
+
 
 

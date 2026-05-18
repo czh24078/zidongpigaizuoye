@@ -363,6 +363,14 @@ body {
 }
 
 
+.submit-area {
+    margin-top: auto;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
 .submit-area .el-button {
     min-width: 130px;
     font-weight: 500;
