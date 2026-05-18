@@ -360,7 +360,6 @@ async def correct_homework(
         created_at=created_at,
     )
 
-
 @router.post("/correct/stream")
 async def correct_homework_stream(
         file: UploadFile = File(...),
@@ -386,7 +385,7 @@ async def correct_homework_stream(
 
             if AGENT_AVAILABLE and homework_agent is not None:
                 try:
-                    async for chunk in homework_agent.correct_stream(file_path):
+                    async for chunk in homework_agent.correct_stream(file_path, standard_answers=standard_answers):
                         yield f"data: {chunk}\n\n"
                         # 累积内容用于保存历史
                         try:

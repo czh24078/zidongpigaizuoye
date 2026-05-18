@@ -525,7 +525,7 @@ class HomeworkAgent:
     # ------------------------------------------------------------------
     # 流式批改（保留旧接口，增加 OCR 支持）
     # ------------------------------------------------------------------
-    async def correct_stream(self, file_path: str = None):
+    async def correct_stream(self, file_path: str = None, standard_answers: Optional[List[dict]] = None):
         if file_path:
             self._last_file_path = file_path
             self._last_filename = os.path.basename(file_path)
@@ -536,6 +536,53 @@ class HomeworkAgent:
 
         full_content = ""
 
+        # 如果有标准答案，使用结构化批改模式
+        if standard_answers:
+            answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
+
+            # OCR 模式
+            if self._ocr_enabled:
+                ocr_text = self._ocr_single(file_path)
+                if ocr_text.strip():
+                    prompt_text = (
+                        f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+                        f"以下是通过 OCR 从学生作业图片（{self._last_filename}）中识别出的文字内容：\n\n"
+                        f"{ocr_text}\n\n"
+                        "请严格按标准答案批改学生作答，逐步输出批改内容。"
+                    )
+                    msg = HumanMessage(content=prompt_text)
+                    messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_OCR_PROMPT), msg]
+
+                    logger.info(f"流式批改使用 OCR + 标准答案模式: {self._last_filename}")
+                    async for chunk in self.llm.astream(messages):
+                        if chunk.content:
+                            full_content += chunk.content
+                            yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
+
+                    self.last_score = self._extract_score(full_content)
+                    self._last_stream_result = full_content
+                    return
+
+            # 图片模式 + 标准答案
+            prompt_text = (
+                f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+                f"请严格按标准答案批改这份学生作业（文件名：{self._last_filename}），"
+                "逐步输出批改内容。"
+            )
+            msg = self._build_image_message(file_path, prompt_text)
+            messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_PROMPT), msg]
+
+            logger.info(f"流式批改使用图片 + 标准答案模式: {self._last_filename}")
+            async for chunk in self.llm.astream(messages):
+                if chunk.content:
+                    full_content += chunk.content
+                    yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
+
+            self.last_score = self._extract_score(full_content)
+            self._last_stream_result = full_content
+            return
+
+        # 无标准答案模式（原有逻辑）
         # OCR 模式
         if self._ocr_enabled:
             ocr_text = self._ocr_single(file_path)
@@ -572,6 +619,7 @@ class HomeworkAgent:
 
         self.last_score = self._extract_score(full_content)
         self._last_stream_result = full_content
+
 
     def _extract_score(self, text: str) -> int:
         patterns = [
