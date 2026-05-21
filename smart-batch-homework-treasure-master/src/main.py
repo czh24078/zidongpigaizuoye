@@ -23,9 +23,13 @@ UPLOADS_DIR = BASE_DIR / "uploads"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动：确保 uploads 目录存在
+    # 启动：初始化数据库和 uploads 目录
+    from src.database import init_db, engine
+    await init_db()
     os.makedirs(UPLOADS_DIR, exist_ok=True)
     yield
+    # 关闭：释放数据库连接池
+    await engine.dispose()
 
 
 app = FastAPI(

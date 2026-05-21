@@ -30,11 +30,14 @@ const app = createApp({
         const questionDetailVisible = ref(false);
         const viewingQuestion = ref(null);
 
-        // 题库（localStorage 持久化）
-        const questionBank = ref(JSON.parse(localStorage.getItem('questionBank') || '[]'));
+        // 题库（MySQL 持久化）
+        const questionBank = ref([]);
 
-        function saveBank() {
-            localStorage.setItem('questionBank', JSON.stringify(questionBank.value));
+        async function fetchQuestionBank() {
+            try {
+                const resp = await axios.get('/api/question-bank');
+                questionBank.value = Array.isArray(resp.data) ? resp.data : [];
+            } catch { questionBank.value = []; }
         }
 
         // 训练状态
@@ -479,24 +482,42 @@ const app = createApp({
 
         function isInBank(q) {
             return questionBank.value.some(
-                b => b.question_text === q.question_text && b.examId === q.examId
+                b => b.exam_id === q.examId && b.question_no === q.question_no
             );
         }
 
-        function addToBank(q) {
+        async function addToBank(q) {
             if (isInBank(q)) {
                 showMessage('该题目已在题库中', 'warning');
                 return;
             }
-            questionBank.value.push({ ...q });
-            saveBank();
-            showMessage('已加入题库', 'success');
+            try {
+                await axios.post('/api/question-bank', {
+                    exam_id: q.examId,
+                    question_no: q.question_no,
+                    question_text: q.question_text,
+                    standard_answer: q.standard_answer,
+                    analysis: q.analysis,
+                    exam_filename: q.examFilename
+                });
+                await fetchQuestionBank();
+                showMessage('已加入题库', 'success');
+            } catch(e) {
+                const msg = e.response?.data?.detail || e.message;
+                showMessage('添加失败: ' + msg, 'error');
+            }
         }
 
-        function removeFromBank(idx) {
-            questionBank.value.splice(idx, 1);
-            saveBank();
-            showMessage('已从题库移除', 'success');
+        async function removeFromBank(idx) {
+            const item = questionBank.value[idx];
+            if (!item) return;
+            try {
+                await axios.delete(`/api/question-bank/${item.id}`);
+                await fetchQuestionBank();
+                showMessage('已从题库移除', 'success');
+            } catch(e) {
+                showMessage('移除失败', 'error');
+            }
         }
 
         function clearBank() {
@@ -504,10 +525,14 @@ const app = createApp({
                 '确定要清空题库吗？',
                 '确认清空',
                 { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' }
-            ).then(() => {
-                questionBank.value = [];
-                saveBank();
-                showMessage('题库已清空', 'success');
+            ).then(async () => {
+                try {
+                    await axios.delete('/api/question-bank');
+                    questionBank.value = [];
+                    showMessage('题库已清空', 'success');
+                } catch(e) {
+                    showMessage('清空失败', 'error');
+                }
             }).catch(() => {});
         }
 
@@ -643,6 +668,7 @@ const app = createApp({
         onMounted(() => {
             fetchHistory();
             fetchExams();
+            fetchQuestionBank();
         });
 
         // ==================== 返回 ====================
@@ -706,6 +732,7 @@ const app = createApp({
             addToBank,
             removeFromBank,
             clearBank,
+            fetchQuestionBank,
 
             // 训练方法
             startTraining,

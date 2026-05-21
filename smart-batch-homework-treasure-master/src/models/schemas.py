@@ -58,3 +58,25 @@ class HistoryItem(BaseModel):
     details: Optional[List[CorrectionDetail]] = None
     record_path: Optional[str] = None
     created_at: datetime
+
+
+class QuestionBankItemSchema(BaseModel):
+    """题库中的一道题目。"""
+    id: int
+    exam_id: str
+    question_no: str
+    question_text: str
+    standard_answer: str
+    analysis: Optional[str] = None
+    exam_filename: str
+    added_at: datetime
+
+
+class AddToBankRequest(BaseModel):
+    """添加到题库的请求体。"""
+    exam_id: str
+    question_no: str
+    question_text: str
+    standard_answer: str
+    analysis: Optional[str] = None
+    exam_filename: str

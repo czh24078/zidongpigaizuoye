@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(_dotenv_path)
 
 class Config:
     # 阿里云百炼 API 配置（优先使用环境变量，否则使用硬编码值）
@@ -10,6 +16,22 @@ class Config:
     HOST = os.getenv("HOST", "0.0.0.0")
     PORT = int(os.getenv("PORT", "8000"))
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+
+    # MySQL 数据库配置
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+    MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
+    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "homework_correction")
+
+    @classmethod
+    def database_url(cls) -> str:
+        from urllib.parse import quote_plus
+        return (
+            f"mysql+aiomysql://{quote_plus(cls.MYSQL_USER)}:{quote_plus(cls.MYSQL_PASSWORD)}"
+            f"@{cls.MYSQL_HOST}:{cls.MYSQL_PORT}/{cls.MYSQL_DATABASE}"
+            "?charset=utf8mb4"
+        )
 
     # OCR 配置
     OCR_ENABLED = os.getenv("OCR_ENABLED", "True").lower() == "true"
