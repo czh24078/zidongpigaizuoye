@@ -68,6 +68,7 @@ venv.bak/
 
 # Project specific
 uploads/
+data/
 
 # macOS
 .DS_Store

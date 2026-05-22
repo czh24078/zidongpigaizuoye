@@ -4,8 +4,7 @@ from src.config import config
 engine = create_async_engine(
     config.database_url(),
     echo=config.DEBUG,
-    pool_size=10,
-    max_overflow=20,
+    connect_args={"check_same_thread": False},
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)

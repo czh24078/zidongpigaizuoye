@@ -115,53 +115,69 @@ async def _save_upload_file(file: UploadFile, subdir: str = "") -> str:
     return save_path
 
 
-def _build_record_markdown(
+def _save_record_docx(
     correction_id: str, filename: str, exam: Optional[ExamResponse],
     score: Optional[int], details: list[CorrectionDetail],
     result_markdown: str, created_at: datetime,
 ) -> str:
-    lines = [
-        "# 作业批改记录", "",
-        f"- 批改ID：`{correction_id}`",
-        f"- 作业文件：{filename}",
-        f"- 批改时间：{created_at.strftime('%Y-%m-%d %H:%M:%S')}",
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+    style = doc.styles["Normal"]
+    style.font.size = Pt(11)
+
+    doc.add_heading("作业批改记录", level=1)
+
+    info = [
+        ("批改ID", correction_id),
+        ("作业文件", filename),
+        ("批改时间", created_at.strftime("%Y-%m-%d %H:%M:%S")),
     ]
     if exam is not None:
-        lines.append(f"- 关联试题：`{exam.id}`（{exam.filename}）")
+        info.append(("关联试题", f"{exam.id}（{exam.filename}）"))
     if score is not None:
-        lines.append(f"- 总分：**{score} / 100**")
-    lines.append("")
-    lines.append("## 逐题批改记录")
-    lines.append("")
+        info.append(("总分", f"{score} / 100"))
+
+    for label, value in info:
+        p = doc.add_paragraph()
+        p.add_run(f"{label}：").bold = True
+        p.add_run(value)
+
+    doc.add_heading("逐题批改记录", level=2)
+
     if details:
         for i, d in enumerate(details, start=1):
-            lines.append(f"### 第 {d.question_no or i} 题")
+            doc.add_heading(f"第 {d.question_no or i} 题", level=3)
             if d.question_text:
-                lines.append(f"- **题干**：{d.question_text}")
-            lines.append(f"- **学生答案**：{d.student_answer or '（未作答/无法识别）'}")
-            lines.append(f"- **正确答案**：{d.standard_answer}")
-            judge = '✅ 正确' if d.is_correct else '❌ 错误'
+                p = doc.add_paragraph()
+                p.add_run("题干：").bold = True
+                p.add_run(d.question_text)
+            p = doc.add_paragraph()
+            p.add_run("学生答案：").bold = True
+            p.add_run(d.student_answer or "（未作答/无法识别）")
+            p = doc.add_paragraph()
+            p.add_run("正确答案：").bold = True
+            p.add_run(d.standard_answer)
+            judge = "正确" if d.is_correct else "错误"
             if d.score is not None and d.full_score is not None:
                 judge += f"（{d.score}/{d.full_score}）"
-            lines.append(f"- **判定**：{judge}")
-            lines.append(f"- **批改分析**：{d.analysis}")
-            lines.append("")
+            p = doc.add_paragraph()
+            p.add_run("判定：").bold = True
+            p.add_run(judge)
+            p = doc.add_paragraph()
+            p.add_run("批改分析：").bold = True
+            p.add_run(d.analysis)
     else:
-        lines.append("> 本次批改未产生结构化的逐题数据，下面是原始批改输出：")
-        lines.append("")
-        lines.append(result_markdown)
-        lines.append("")
-    lines.append("---")
-    lines.append("")
-    lines.append("## 完整批改报告")
-    lines.append("")
-    lines.append(result_markdown)
-    return "\n".join(lines)
+        doc.add_paragraph("本次批改未产生结构化的逐题数据，下面是原始批改输出：")
+        doc.add_paragraph(result_markdown)
 
+    doc.add_paragraph("—" * 30)
+    doc.add_heading("完整批改报告", level=2)
+    doc.add_paragraph(result_markdown)
 
-def _save_record_file(correction_id: str, markdown: str) -> str:
-    path = RECORDS_DIR / f"{correction_id}.md"
-    path.write_text(markdown, encoding="utf-8")
+    path = RECORDS_DIR / f"{correction_id}.docx"
+    doc.save(str(path))
     return str(path.relative_to(BASE_DIR)).replace("\\", "/")
 
 
@@ -333,12 +349,11 @@ async def correct_homework(
     correction_id = str(uuid.uuid4())
     created_at = datetime.now()
 
-    record_md = _build_record_markdown(
+    record_path = _save_record_docx(
         correction_id=correction_id, filename=file.filename or "unknown",
         exam=exam, score=score, details=details_objs,
         result_markdown=result_text, created_at=created_at,
     )
-    record_path = _save_record_file(correction_id, record_md)
 
     summary = f"作业批改完成，总分 {score} 分。" + (f"（基于试题 {exam.filename}）" if exam else "")
 
@@ -415,12 +430,11 @@ async def correct_homework_stream(
             created_at = datetime.now()
             result_text = full_content or getattr(homework_agent, "_last_stream_result", "")
 
-            record_md = _build_record_markdown(
+            record_path = _save_record_docx(
                 correction_id=correction_id, filename=file.filename or "unknown",
                 exam=exam, score=score, details=details_objs,
                 result_markdown=result_text, created_at=created_at,
             )
-            _save_record_file(correction_id, record_md)
 
             summary = f"作业批改完成，总分 {score} 分。" + (f"（基于试题 {exam.filename}）" if exam else "")
 
@@ -432,7 +446,7 @@ async def correct_homework_stream(
                     id=correction_id, filename=file.filename or "unknown",
                     result=result_text, score=score, summary=summary,
                     exam_id=exam.id if exam else None,
-                    record_path=None, created_at=created_at,
+                    record_path=record_path, created_at=created_at,
                 )
                 for d in details_objs:
                     db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
@@ -471,12 +485,12 @@ async def get_history(session: AsyncSession = Depends(get_db)):
 
 @router.get("/correction/{correction_id}/record")
 async def download_record(correction_id: str):
-    path = RECORDS_DIR / f"{correction_id}.md"
+    path = RECORDS_DIR / f"{correction_id}.docx"
     if not path.exists():
         raise HTTPException(status_code=404, detail="批改记录不存在")
     return FileResponse(
-        path, filename=f"correction_{correction_id}.md",
-        media_type="text/markdown; charset=utf-8",
+        path, filename=f"correction_{correction_id}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
 
 

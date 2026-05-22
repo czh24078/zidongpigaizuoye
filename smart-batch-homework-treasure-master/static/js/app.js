@@ -644,11 +644,11 @@ const app = createApp({
                 const resp = await axios.get(`/api/correction/${correctionId}/record`, {
                     responseType: 'blob'
                 });
-                const blob = new Blob([resp.data], { type: 'text/markdown;charset=utf-8' });
+                const blob = new Blob([resp.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `correction_${correctionId}.md`;
+                a.download = `correction_${correctionId}.docx`;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);

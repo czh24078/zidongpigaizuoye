@@ -13,25 +13,19 @@ class Config:
     MODEL_BASE_URL = os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     # 应用配置
-    HOST = os.getenv("HOST", "0.0.0.0")
+    HOST = os.getenv("HOST", "127.0.0.1")
     PORT = int(os.getenv("PORT", "8000"))
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-    # MySQL 数据库配置
-    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
-    MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
-    MYSQL_USER = os.getenv("MYSQL_USER", "root")
-    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "")
-    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "homework_correction")
+    # SQLite 数据库配置
+    SQLITE_PATH = os.getenv("SQLITE_PATH", str(Path(__file__).resolve().parent.parent / "data" / "homework.db"))
 
     @classmethod
     def database_url(cls) -> str:
-        from urllib.parse import quote_plus
-        return (
-            f"mysql+aiomysql://{quote_plus(cls.MYSQL_USER)}:{quote_plus(cls.MYSQL_PASSWORD)}"
-            f"@{cls.MYSQL_HOST}:{cls.MYSQL_PORT}/{cls.MYSQL_DATABASE}"
-            "?charset=utf8mb4"
-        )
+        db_path = Path(cls.SQLITE_PATH)
+        if not db_path.is_absolute():
+            db_path = Path(__file__).resolve().parent.parent / db_path
+        return f"sqlite+aiosqlite:///{str(db_path).replace(chr(92), '/')}"
 
     # OCR 配置
     OCR_ENABLED = os.getenv("OCR_ENABLED", "True").lower() == "true"
