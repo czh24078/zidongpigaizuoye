@@ -165,6 +165,54 @@ SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
 
 请直接输出结果，确保公式和数值的完整性。"""
 
+# AI 出题 Prompt
+GENERATE_CHINESE_PROMPT = """你是一位资深语文教师，请生成{count}道{grade}语文练习题。
+
+{requirement_block}
+【难度要求】{difficulty}
+
+【参考题型】
+- 小学阶段：拼音与字词（看拼音写汉字、形近字辨析、多音字、近反义词）、成语与歇后语、修改病句、句式转换（把字句/被字句/反问句转陈述句）、修辞手法判断（比喻/拟人/排比/夸张）、古诗背诵与默写（课标必背篇目）、阅读短文回答问题、口语交际与写作表达
+- 初中阶段：古诗文默写与鉴赏（诗句填空、作者/朝代、修辞赏析、情感分析）、文言文阅读（实词解释、虚词用法、句子翻译、内容理解）、现代文阅读（概括主旨、分析人物、理解词句含义、写作手法）、病句修改与成语运用、文学常识（作家作品、文体知识、名著阅读）、写作表达（句式转换、语言运用、作文片段）
+
+【输出格式】严格以 JSON 数组返回，不要输出任何解释性文字。
+[
+  {{"question_no": "1", "question_text": "完整题干", "standard_answer": "标准答案", "analysis": "简要解析", "difficulty": "{difficulty}"}}
+]"""
+
+GENERATE_MATH_PROMPT = """你是一位资深数学教师，请生成{count}道{grade}数学练习题。
+
+{requirement_block}
+【难度要求】{difficulty}
+
+【要求】
+- 题目要有完整的题干（不能只有一句话）
+- 计算题的数值要随机变化，不要每次出一样的数字
+
+【参考知识点】
+- 小学阶段：四则混合运算与简便计算、分数与小数的互化与运算、因数与倍数（质数/合数/最大公因数/最小公倍数）、单位换算（长度/面积/体积/重量/时间）、周长与面积（长方形/正方形/三角形/圆）、体积与表面积（长方体/正方体/圆柱）、百分数与比例应用题（折扣/利率/浓度）、方程初步（一元一次方程解应用题）、统计图与平均数
+- 初中阶段：代数方程与不等式（一元一次/二次方程、方程组、不等式）、函数（一次函数、二次函数、反比例函数、图像与性质）、几何（三角形、四边形、圆、相似与全等、勾股定理、三角函数入门）、数与式（实数运算、因式分解、分式、二次根式）、概率统计（数据统计、概率计算）
+
+【输出格式】严格以 JSON 数组返回，不要输出任何解释性文字。
+[
+  {{"question_no": "1", "question_text": "完整题干", "standard_answer": "标准答案", "analysis": "简要解析", "difficulty": "{difficulty}"}}
+]"""
+
+GENERATE_QUESTIONS_PROMPT = """你是一位资深学科教师，请根据以下要求生成练习题。
+
+【要求】
+科目：{subject}
+年级：{grade}
+题型：{question_type}
+难度：{difficulty}
+数量：{count} 道
+{requirement_text}
+
+【输出格式】严格以 JSON 数组返回，不要输出任何解释性文字。
+[
+  {{"question_no": "1", "question_text": "完整题干", "standard_answer": "标准答案", "analysis": "简要解析", "difficulty": "简单/中等/困难"}}
+]"""
+
 
 
 def _strip_json_fence(text: str) -> str:
@@ -636,6 +684,81 @@ class HomeworkAgent:
                 except ValueError:
                     continue
         return 85
+
+    # ------------------------------------------------------------------
+    # AI 出题
+    # ------------------------------------------------------------------
+    async def generate_questions(
+        self, subject: str, grade: str, question_type: str,
+        difficulty: str, count: int, requirement: Optional[str] = None,
+    ) -> List[dict]:
+        """根据参数生成题目列表。"""
+        # 出题使用更高 temperature 增加随机性
+        gen_llm = ChatOpenAI(
+            model=config.MODEL_NAME,
+            base_url=config.MODEL_BASE_URL,
+            api_key=config.MODEL_API_KEY,
+            temperature=0.9,
+            timeout=300,
+        )
+
+        if requirement:
+            requirement_block = (
+                f"【核心指令——必须遵守】本次所有{count}道题必须是「{subject}」学科的题目。\n"
+                f"出题范围严格限定为以下知识点：「{requirement}」\n"
+                f"只能出与上述知识点直接相关的{subject}题，禁止切换到其他学科，禁止出无关题目。\n"
+                f"要在同一个知识点下从不同角度、不同题型出题，确保{count}道题各不相同。"
+            )
+            sys_requirement = (
+                f"你只能出{subject}题。本次出题知识点：「{requirement}」。"
+                f"每道题必须同时满足：是{subject}题、直接考察该知识点。"
+                f"从不同角度出{count}道题。严格按 JSON 格式返回。"
+            )
+        else:
+            requirement_block = "【出题指令】从参考题型/知识点中随机选择不同组合，确保题目多样化，覆盖不同方向。"
+            sys_requirement = "每次出题要有新意，避免重复。从不同知识点随机组合。严格按 JSON 格式返回。"
+
+        # 语文/数学使用专用 Prompt，其他科目使用通用 Prompt
+        if subject == "语文":
+            prompt_text = GENERATE_CHINESE_PROMPT.format(
+                count=count, difficulty=difficulty, grade=grade,
+                requirement_block=requirement_block,
+            )
+            system_text = f"你是一位资深语文教师，{sys_requirement}"
+        elif subject == "数学":
+            prompt_text = GENERATE_MATH_PROMPT.format(
+                count=count, difficulty=difficulty, grade=grade,
+                requirement_block=requirement_block,
+            )
+            system_text = f"你是一位资深数学教师，{sys_requirement}"
+        else:
+            req_text = f"\n【知识点要求】只能围绕以下知识点出题：{requirement}" if requirement else ""
+            prompt_text = GENERATE_QUESTIONS_PROMPT.format(
+                subject=subject, grade=grade, question_type=question_type,
+                difficulty=difficulty, count=count, requirement_text=req_text,
+            )
+            system_text = "你是一位资深学科教师，擅长出题。请严格按要求输出 JSON 格式题目，不要输出任何解释性文字。"
+        messages = [
+            SystemMessage(content=system_text),
+            HumanMessage(content=prompt_text),
+        ]
+        response = await gen_llm.ainvoke(messages)
+        parsed = _parse_json_safely(response.content or "")
+        if not isinstance(parsed, list):
+            raise ValueError("模型返回内容无法解析为题目列表 JSON")
+
+        normalized = []
+        for i, q in enumerate(parsed, start=1):
+            if not isinstance(q, dict):
+                continue
+            normalized.append({
+                "question_no": str(q.get("question_no") or i),
+                "question_text": str(q.get("question_text") or "").strip(),
+                "standard_answer": str(q.get("standard_answer") or "").strip(),
+                "analysis": str(q.get("analysis") or "").strip(),
+                "difficulty": str(q.get("difficulty") or difficulty).strip(),
+            })
+        return normalized
 
 
 # 单例

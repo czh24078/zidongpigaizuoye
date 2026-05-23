@@ -80,3 +80,27 @@ class AddToBankRequest(BaseModel):
     standard_answer: str
     analysis: Optional[str] = None
     exam_filename: str
+
+
+class AIGenerateRequest(BaseModel):
+    """AI出题请求体。"""
+    subject: str = "数学"                      # 科目
+    grade: str = "初中"                        # 年级
+    question_type: str = "混合"                # 题型：单选/多选/填空/解答/混合
+    difficulty: str = "中等"                   # 难度：简单/中等/困难
+    count: int = 5                             # 题目数量
+    requirement: Optional[str] = None          # 额外要求/知识点
+
+
+class AIGeneratedQuestion(BaseModel):
+    """AI生成的一道题目。"""
+    question_no: str
+    question_text: str
+    standard_answer: str
+    analysis: Optional[str] = None
+    difficulty: Optional[str] = None
+
+
+class AIGenerateResponse(BaseModel):
+    """AI出题响应。"""
+    questions: List[AIGeneratedQuestion]

@@ -7,7 +7,7 @@
     <!-- Element Plus CSS -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <!-- 自定义样式 -->
-    <link rel="stylesheet" href="/static/css/style.css?v=8">
+    <link rel="stylesheet" href="/static/css/style.css?v=16">
 </head>
 <body>
     <div id="app">
@@ -39,6 +39,10 @@
                     <div class="nav-item" :class="{ active: activeNav === 'training' }" @click="activeNav = 'training'">
                         <el-icon :size="20"><trophy /></el-icon>
                         <span>训练</span>
+                    </div>
+                    <div class="nav-item" :class="{ active: activeNav === 'ai-generate' }" @click="activeNav = 'ai-generate'">
+                        <el-icon :size="20"><edit-pen /></el-icon>
+                        <span>AI出题</span>
                     </div>
                 </nav>
             </aside>
@@ -378,6 +382,92 @@
                 </template>
             </div>
 
+            <!-- AI 出题页面 -->
+            <div v-if="activeNav === 'ai-generate'" class="ai-generate-container">
+                <el-card class="ai-generate-form-card" shadow="hover">
+                    <template #header>
+                        <div class="card-header">
+                            <el-icon><edit-pen /></el-icon>
+                            <span>AI 智能出题</span>
+                        </div>
+                    </template>
+
+                    <el-form :model="aiForm" label-width="80px" label-position="left">
+                        <el-row :gutter="20">
+                            <el-col :span="6">
+                                <el-form-item label="科目">
+                                    <el-select v-model="aiForm.subject" style="width:100%;">
+                                        <el-option label="语文" value="语文"></el-option>
+                                        <el-option label="数学" value="数学"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="6">
+                                <el-form-item label="年级">
+                                    <el-select v-model="aiForm.grade" style="width:100%;">
+                                        <el-option label="小学" value="小学"></el-option>
+                                        <el-option label="初中" value="初中"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="6">
+                                <el-form-item label="难度">
+                                    <el-select v-model="aiForm.difficulty" style="width:100%;">
+                                        <el-option label="简单" value="简单"></el-option>
+                                        <el-option label="中等" value="中等"></el-option>
+                                        <el-option label="困难" value="困难"></el-option>
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :span="6">
+                                <el-form-item label="数量">
+                                    <el-input-number v-model="aiForm.count" :min="1" :max="20" style="width:100%;" />
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="20">
+                            <el-col :span="24">
+                                <el-form-item label="知识点">
+                                    <el-input v-model="aiForm.requirement" placeholder="例如：二元一次方程组、勾股定理、古诗鉴赏、文言文虚词……" clearable></el-input>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-row>
+                            <el-col :span="24" style="text-align:center;padding-top:12px;">
+                                <el-button type="primary" size="large" :loading="isGenerating" @click="generateQuestions" style="min-width:180px;">
+                                    <el-icon :size="20"><edit-pen /></el-icon> 生成题目
+                                </el-button>
+                            </el-col>
+                        </el-row>
+                    </el-form>
+
+                    <div v-if="aiGeneratedQuestions.length > 0" style="text-align:center;margin-top:12px;">
+                        <el-button size="small" @click="aiGeneratedQuestions = []">清空结果</el-button>
+                    </div>
+                </el-card>
+
+                <!-- 生成结果 -->
+                <div v-if="aiGeneratedQuestions.length > 0" class="ai-question-list">
+                    <el-card v-for="(q, idx) in aiGeneratedQuestions" :key="idx" shadow="hover" class="ai-question-item">
+                        <div class="ai-question-header">
+                            <span class="ai-question-no">{{ idx + 1 }}</span>
+                            <span class="ai-question-text">{{ q.question_text }}</span>
+                        </div>
+                        <div class="ai-question-answer">
+                            <strong>答案：</strong>{{ q.standard_answer }}
+                        </div>
+                        <div v-if="q.analysis" class="ai-question-analysis">
+                            <strong>解析：</strong>{{ q.analysis }}
+                        </div>
+                        <div class="ai-question-footer">
+                            <el-button type="success" size="small" @click="addGeneratedToBank(q)">
+                                <el-icon><plus /></el-icon> 加入题库
+                            </el-button>
+                        </div>
+                    </el-card>
+                </div>
+            </div>
+
             <!-- 批改历史 -->
             <el-card v-if="activeNav === 'home'" class="history-card" shadow="hover">
                 <template #header>
@@ -464,6 +554,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=9"></script>
+    <script src="/static/js/app.js?v=16"></script>
 </body>
 </html>

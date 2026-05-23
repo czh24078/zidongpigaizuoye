@@ -1066,3 +1066,80 @@ body {
 .el-empty__description {
     color: var(--text-secondary);
 }
+
+/* ==================== AI 出题页面 ==================== */
+.ai-generate-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    animation: fadeInUp 0.4s ease;
+}
+
+.ai-generate-form-card .el-form-item {
+    margin-bottom: 4px;
+}
+
+.ai-question-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ai-question-item {
+    transition: var(--transition);
+    border-radius: 10px;
+}
+
+.ai-question-item:hover {
+    box-shadow: var(--shadow-md);
+}
+
+.ai-question-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.ai-question-no {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #409eff 0%, #1a56db 100%);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.ai-question-text {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.ai-question-answer {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #f0f9eb;
+    border-radius: 6px;
+    font-size: 14px;
+    color: var(--success-color);
+}
+
+.ai-question-analysis {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.ai-question-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
+}

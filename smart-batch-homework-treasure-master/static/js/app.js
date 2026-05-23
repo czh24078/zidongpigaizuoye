@@ -47,6 +47,11 @@ const app = createApp({
         const trainingChecked = ref(false);
         const trainingScore = ref(0);
 
+        // AI 出题状态
+        const aiGeneratedQuestions = ref([]);
+        const aiForm = reactive({ subject: '语文', grade: '初中', difficulty: '中等', count: 5, requirement: '' });
+        const isGenerating = ref(false);
+
         // 将所有试卷的题目展平为单题列表
         const allQuestions = computed(() => {
             const list = [];
@@ -583,6 +588,56 @@ const app = createApp({
             trainingChecked.value = false;
         }
 
+        // ==================== AI 出题 ====================
+
+        async function generateQuestions() {
+            if (isGenerating.value) return;
+            isGenerating.value = true;
+            aiGeneratedQuestions.value = [];
+            try {
+                const resp = await axios.post('/api/ai-generate', {
+                    subject: aiForm.subject,
+                    grade: aiForm.grade,
+                    question_type: '混合',
+                    difficulty: aiForm.difficulty,
+                    count: aiForm.count,
+                    requirement: aiForm.requirement || null
+                }, { timeout: 180000 });
+                if (resp.data && Array.isArray(resp.data.questions)) {
+                    aiGeneratedQuestions.value = resp.data.questions;
+                    showMessage(`成功生成 ${resp.data.questions.length} 道题目`, 'success');
+                }
+            } catch (error) {
+                console.error('AI出题失败:', error);
+                const msg = error.response?.data?.detail || error.message || '出题失败';
+                showMessage(msg, 'error');
+            } finally {
+                isGenerating.value = false;
+            }
+        }
+
+        async function addGeneratedToBank(q) {
+            try {
+                await axios.post('/api/question-bank', {
+                    exam_id: 'ai-gen-' + Date.now(),
+                    question_no: q.question_no,
+                    question_text: q.question_text,
+                    standard_answer: q.standard_answer,
+                    analysis: q.analysis,
+                    exam_filename: 'AI生成题目'
+                });
+                await fetchQuestionBank();
+                showMessage('已加入题库', 'success');
+            } catch (e) {
+                const msg = e.response?.data?.detail || e.message;
+                if (e.response?.status === 409) {
+                    showMessage('该题目已在题库中', 'warning');
+                } else {
+                    showMessage('添加失败: ' + msg, 'error');
+                }
+            }
+        }
+
         function openAnswerEditor() {
             if (!currentExam.value) return;
             editingQuestions.value = currentExam.value.questions.map(q => ({ ...q }));
@@ -710,6 +765,11 @@ const app = createApp({
             trainingChecked,
             trainingScore,
 
+            // AI 出题状态
+            aiGeneratedQuestions,
+            aiForm,
+            isGenerating,
+
             // 方法
             triggerFileInput,
             handleFileSelect,
@@ -738,6 +798,10 @@ const app = createApp({
             startTraining,
             checkTrainingAnswers,
             endTraining,
+
+            // AI 出题方法
+            generateQuestions,
+            addGeneratedToBank,
 
             // 试题相关方法
             triggerExamFileInput,

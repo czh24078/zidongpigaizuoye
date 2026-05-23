@@ -23,6 +23,9 @@ from src.models.schemas import (
     CorrectionDetail,
     QuestionBankItemSchema,
     AddToBankRequest,
+    AIGenerateRequest,
+    AIGenerateResponse,
+    AIGeneratedQuestion,
 )
 from src.models.db_models import (
     Exam,
@@ -547,6 +550,113 @@ async def clear_bank(session: AsyncSession = Depends(get_db)):
     await session.execute(delete(QuestionBankItem))
     await session.commit()
     return {"status": "ok"}
+
+
+def _mock_questions(payload: AIGenerateRequest) -> list[dict]:
+    """根据请求参数动态生成 mock 题目（AI不可用时的兜底）。"""
+    is_primary = payload.grade == "小学"
+    req = (payload.requirement or "").strip()
+
+    if payload.subject == "语文":
+        if is_primary:
+            templates = [
+                {"q": "看拼音写词语：táo huā（    ）", "a": "桃花", "r": "考查拼音拼读和汉字书写，注意'桃'的右边是'兆'。"},
+                {"q": "下列词语中加点字读音完全正确的一项是？A. 模范(mú) B. 模样(mó) C. 模范(mó)", "a": "C", "r": "'模范'的'模'读mó，'模样'的'模'读mú，注意多音字辨析。"},
+                {"q": "默写李白的《静夜思》。", "a": "床前明月光，疑是地上霜。举头望明月，低头思故乡。", "r": "考查课标必背古诗，注意'疑''霜'二字的书写。"},
+                {"q": "把下列'把'字句改成'被'字句：小猫把花瓶打碎了。", "a": "花瓶被小猫打碎了。", "r": "把字句与被字句转换，交换主语和宾语的位置。"},
+                {"q": "'他跑得很快'这句话用了什么修辞手法？A. 比喻 B. 拟人 C. 夸张", "a": "C", "r": "考查修辞手法判断，'很快'是夸张表达。"},
+                {"q": "选词填空：安静 宁静 平静\n教室里非常（    ），同学们都在认真写作业。", "a": "安静", "r": "近义词辨析：安静强调没有声音，宁静形容环境，平静形容心情。"},
+                {"q": "请写出三个描写春天的成语。", "a": "春暖花开、春光明媚、鸟语花香（答案不唯一）", "r": "考查成语积累，注意与主题的关联性。"},
+                {"q": "修改病句：经过老师的帮助，我的成绩有了明显的提高和进步。", "a": "经过老师的帮助，我的成绩有了明显的提高。", "r": "语义重复，'提高'和'进步'意思相近，删去其一。"},
+                {"q": "阅读短文回答问题（略），请概括这篇文章的主要内容。", "a": "概括要抓住时间、地点、人物、事件四要素。", "r": "考查阅读理解与概括能力，注意用简洁的语言归纳。"},
+                {"q": "请用'虽然……但是……'写一句话。", "a": "答案不唯一，如：虽然下雨了，但是我还是坚持去上学。", "r": "考查转折关系的关联词运用，注意前后语义相反。"},
+            ]
+        else:
+            templates = [
+                {"q": "下列词语中加点字读音完全正确的一项是？", "a": "B", "r": "A项'殷红'应为yān，C项'拮据'应为jū，D项'栈桥'应为zhàn。"},
+                {"q": "默写杜甫《春望》中描写战乱景象的两句。", "a": "国破山河在，城春草木深。", "r": "考查古诗文默写，注意'破''深'二字。"},
+                {"q": "'温故而知新'中'故'的意思是？", "a": "旧的知识", "r": "语出《论语》，'故'指学过的知识。"},
+                {"q": "下列句子没有语病的一项是？", "a": "通过这次活动，我开阔了眼界。", "r": "考查病句辨析，其余选项均有搭配不当。"},
+                {"q": "请写出《陋室铭》的主旨句。", "a": "斯是陋室，惟吾德馨。", "r": "全文主旨，体现作者安贫乐道。"},
+                {"q": "'吹面不寒杨柳风'出自哪位诗人之手？", "a": "志南（释志南）", "r": "南宋诗僧志南的《绝句》。"},
+                {"q": "下列修辞手法判断错误的是？", "a": "C（比喻应为拟人）", "r": "考查比喻、拟人、排比、夸张的区分。"},
+                {"q": "'不以物喜，不以己悲'表现了怎样的精神境界？", "a": "豁达胸怀，不因外物的好坏和个人的得失而或喜或悲。", "r": "出自《岳阳楼记》，考查思想感情分析。"},
+                {"q": "下列成语使用恰当的一项是？", "a": "A", "r": "考查成语在具体语境中的运用。注意感情色彩。"},
+                {"q": "请翻译：'知之者不如好之者，好之者不如乐之者。'", "a": "知道它的人不如喜爱它的人，喜爱它的人不如以它为乐的人。", "r": "考查文言句子翻译，注意'之'的指代。"},
+            ]
+    else:
+        if is_primary:
+            templates = [
+                {"q": "计算：125 × 8 ÷ 4 = ?", "a": "250", "r": "先乘后除，125×8=1000，1000÷4=250。"},
+                {"q": "把 3/4 和 5/6 通分后比较大小。", "a": "3/4 = 9/12，5/6 = 10/12，所以 3/4 < 5/6", "r": "找分母的最小公倍数12，然后比较分子。"},
+                {"q": "一个长方形的长是12cm，宽是8cm，求它的周长和面积。", "a": "周长=40cm，面积=96cm²", "r": "周长=(长+宽)×2=40，面积=长×宽=96。"},
+                {"q": "小明买了3支笔和2个本子，笔每支2元，本子每个5元，一共花了多少钱？", "a": "16元", "r": "3×2+2×5=6+10=16元。"},
+                {"q": "36和48的最大公因数是多少？", "a": "12", "r": "36=2²×3², 48=2⁴×3，公因数取最小指数：2²×3=12。"},
+                {"q": "2.5千克 = （    ）克", "a": "2500", "r": "1千克=1000克，2.5×1000=2500克。"},
+                {"q": "解方程：3x + 5 = 20", "a": "x = 5", "r": "移项：3x=15，两边除以3得x=5。"},
+                {"q": "三角形三个内角的和是多少度？", "a": "180°", "r": "三角形内角和定理，任意三角形内角和都是180°。"},
+                {"q": "一个正方体的棱长是4cm，求它的体积。", "a": "64cm³", "r": "正方体体积=棱长³=4³=64。"},
+                {"q": "根据统计图，某班男生25人女生20人，男生比女生多百分之几？", "a": "25%", "r": "(25-20)÷20×100%=25%。"},
+            ]
+        else:
+            templates = [
+                {"q": "解方程：3x - 7 = 2x + 5", "a": "x = 12", "r": "移项合并同类项即可。"},
+                {"q": "若方程 2x² - 5x + k = 0 有两个相等实数根，求 k。", "a": "k = 25/8", "r": "判别式 Δ = b²-4ac = 25-8k = 0。"},
+                {"q": "抛物线 y = x² - 4x + 3 的顶点坐标是？", "a": "(2, -1)", "r": "配方：y = (x-2)² - 1，顶点(2,-1)。"},
+                {"q": "在直角三角形中，∠C=90°，AC=3, BC=4，求 AB。", "a": "5", "r": "勾股定理：AB = √(3²+4²) = 5。"},
+                {"q": "计算：(-2)³ + √16 - |3-7|", "a": "-3", "r": "=-8+4-4=-8，注意运算顺序。"},
+                {"q": "因式分解：x² - 5x + 6", "a": "(x-2)(x-3)", "r": "十字相乘法，找到-2和-3。"},
+                {"q": "函数 y = 2x + 1 经过第几象限？", "a": "一、二、三象限", "r": "k=2>0,b=1>0, 过一二三象限。"},
+                {"q": "解不等式组：{2x-3>1, x+2≤7}", "a": "2 < x ≤ 5", "r": "分别求解取交集。"},
+                {"q": "已知 a² - b² = 21，a + b = 7，求 a - b。", "a": "3", "r": "a²-b²=(a+b)(a-b)，即21=7×(a-b)。"},
+                {"q": "计算概率：掷两个骰子，点数和为7的概率。", "a": "1/6", "r": "6/36=1/6，共有6种组合。注意有序性。"},
+            ]
+
+    # 如果指定了知识点，给 mock 题目打上标注
+    if req:
+        prefix = f"【{req}】"
+        for t in templates:
+            if prefix not in t["q"]:
+                t["q"] = f"{prefix} {t['q']}"
+
+    result = []
+    for i in range(min(payload.count, len(templates))):
+        t = templates[i]
+        result.append({
+            "question_no": str(i + 1),
+            "question_text": t["q"],
+            "standard_answer": t["a"],
+            "analysis": t["r"],
+            "difficulty": payload.difficulty,
+        })
+    return result
+
+
+# =====================================================================
+# AI 出题接口
+# =====================================================================
+
+@router.post("/ai-generate", response_model=AIGenerateResponse)
+async def ai_generate_questions(payload: AIGenerateRequest):
+    if AGENT_AVAILABLE and homework_agent is not None:
+        try:
+            questions_data = await homework_agent.generate_questions(
+                subject=payload.subject,
+                grade=payload.grade,
+                question_type=payload.question_type,
+                difficulty=payload.difficulty,
+                count=payload.count,
+                requirement=payload.requirement,
+            )
+        except Exception as e:
+            logger.error(f"AI出题失败: {e}", exc_info=True)
+            questions_data = _mock_questions(payload)
+    else:
+        questions_data = _mock_questions(payload)
+
+    return AIGenerateResponse(
+        questions=[AIGeneratedQuestion(**q) for q in questions_data]
+    )
 
 
 @router.get("/health")

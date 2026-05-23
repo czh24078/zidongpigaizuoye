@@ -18,7 +18,7 @@ class Config:
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
     # SQLite 数据库配置
-    SQLITE_PATH = os.getenv("SQLITE_PATH", str(Path(__file__).resolve().parent.parent / "data" / "homework.db"))
+    SQLITE_PATH = os.getenv("SQLITE_PATH", str(Path(__file__).resolve().parent.parent / "homework.db"))
 
     @classmethod
     def database_url(cls) -> str:
