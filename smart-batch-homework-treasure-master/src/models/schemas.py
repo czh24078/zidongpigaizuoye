@@ -63,18 +63,19 @@ class HistoryItem(BaseModel):
 class QuestionBankItemSchema(BaseModel):
     """题库中的一道题目。"""
     id: int
-    exam_id: str
+    exam_id: Optional[str] = None
     question_no: str
     question_text: str
     standard_answer: str
     analysis: Optional[str] = None
     exam_filename: str
+    bank_no: Optional[int] = None
     added_at: datetime
 
 
 class AddToBankRequest(BaseModel):
     """添加到题库的请求体。"""
-    exam_id: str
+    exam_id: Optional[str] = None
     question_no: str
     question_text: str
     standard_answer: str

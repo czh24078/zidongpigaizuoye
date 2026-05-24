@@ -653,6 +653,31 @@ body {
     font-size: 1.1em;
 }
 /* ==================== 历史题目列表（单题展示） ==================== */
+.search-bar {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.search-bar .el-input {
+    flex-shrink: 0;
+}
+
+.question-history-date {
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+
+.question-history-text mark {
+    background: #fff3cd;
+    color: #856404;
+    padding: 1px 3px;
+    border-radius: 2px;
+}
+
 .question-history-list {
     display: flex;
     flex-direction: column;

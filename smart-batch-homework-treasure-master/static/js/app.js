@@ -33,6 +33,11 @@ const app = createApp({
         // 题库（MySQL 持久化）
         const questionBank = ref([]);
 
+        // 搜索状态
+        const historyKeyword = ref('');
+        const bankQuestionNo = ref('');
+        const bankKeyword = ref('');
+
         async function fetchQuestionBank() {
             try {
                 const resp = await axios.get('/api/question-bank');
@@ -60,7 +65,8 @@ const app = createApp({
                     list.push({
                         ...q,
                         examId: exam.id,
-                        examFilename: exam.filename
+                        examFilename: exam.filename,
+                        examCreatedAt: exam.created_at
                     });
                 }
             }
@@ -80,6 +86,49 @@ const app = createApp({
         const currentExam = computed(() => {
             if (!selectedExamId.value) return null;
             return exams.value.find(e => e.id === selectedExamId.value) || null;
+        });
+
+        // 历史题目筛选
+        const filteredQuestions = computed(() => {
+            let list = allQuestions.value;
+            const kw = historyKeyword.value.trim().toLowerCase();
+            if (kw) {
+                list = list
+                    .map(q => {
+                        const text = (q.question_text || '').toLowerCase();
+                        const answer = (q.standard_answer || '').toLowerCase();
+                        const count = (text.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+                                    + (answer.match(new RegExp(kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+                        return { ...q, _matchCount: count };
+                    })
+                    .filter(q => q._matchCount > 0)
+                    .sort((a, b) => {
+                        const dc = b._matchCount - a._matchCount;
+                        if (dc !== 0) return dc;
+                        return (b.examCreatedAt || '').localeCompare(a.examCreatedAt || '');
+                    });
+            }
+            return list;
+        });
+
+        // 题库筛选
+        const filteredBank = computed(() => {
+            let list = questionBank.value;
+            if (bankQuestionNo.value.trim()) {
+                const no = parseInt(bankQuestionNo.value.trim(), 10);
+                if (!isNaN(no)) {
+                    list = list.filter(q => q.bank_no === no);
+                }
+            }
+            if (bankKeyword.value.trim()) {
+                const kw = bankKeyword.value.trim().toLowerCase();
+                list = list.filter(q =>
+                    (q.question_text || '').toLowerCase().includes(kw) ||
+                    (q.standard_answer || '').toLowerCase().includes(kw) ||
+                    (q.analysis || '').toLowerCase().includes(kw)
+                );
+            }
+            return list;
         });
 
         // ==================== 工具方法 ====================
@@ -485,6 +534,21 @@ const app = createApp({
 
         // ==================== 题库 ====================
 
+        function clearBankSearch() {
+            bankQuestionNo.value = '';
+            bankKeyword.value = '';
+        }
+
+        function highlightKeyword(text) {
+            const kw = (activeNav.value === 'exam-history' ? historyKeyword.value : bankKeyword.value).trim();
+            if (!kw || !text) return text;
+            const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`(${escaped})`, 'gi');
+            return text.replace(regex, '<mark>$1</mark>');
+        }
+
+        // ==================== 题库 ====================
+
         function isInBank(q) {
             return questionBank.value.some(
                 b => b.exam_id === q.examId && b.question_no === q.question_no
@@ -513,11 +577,9 @@ const app = createApp({
             }
         }
 
-        async function removeFromBank(idx) {
-            const item = questionBank.value[idx];
-            if (!item) return;
+        async function removeFromBank(itemId) {
             try {
-                await axios.delete(`/api/question-bank/${item.id}`);
+                await axios.delete(`/api/question-bank/${itemId}`);
                 await fetchQuestionBank();
                 showMessage('已从题库移除', 'success');
             } catch(e) {
@@ -619,7 +681,7 @@ const app = createApp({
         async function addGeneratedToBank(q) {
             try {
                 await axios.post('/api/question-bank', {
-                    exam_id: 'ai-gen-' + Date.now(),
+                    exam_id: null,
                     question_no: q.question_no,
                     question_text: q.question_text,
                     standard_answer: q.standard_answer,
@@ -694,6 +756,26 @@ const app = createApp({
             }
         }
 
+        async function deleteHistoryExam(examId) {
+            try {
+                await ElementPlus.ElMessageBox.confirm(
+                    '确定要删除这份试题及其所有题目吗？',
+                    '确认删除',
+                    { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+                );
+            } catch {
+                return;
+            }
+            try {
+                await axios.delete(`/api/exam/${examId}`);
+                showMessage('试题已删除', 'success');
+                await fetchExams();
+            } catch (error) {
+                console.error(error);
+                showMessage(error.response?.data?.detail || '删除失败', 'error');
+            }
+        }
+
         async function downloadRecord(correctionId) {
             try {
                 const resp = await axios.get(`/api/correction/${correctionId}/record`, {
@@ -756,7 +838,14 @@ const app = createApp({
             questionDetailVisible,
             viewingQuestion,
             allQuestions,
+            filteredQuestions,
             questionBank,
+            filteredBank,
+
+            // 搜索状态
+            historyKeyword,
+            bankQuestionNo,
+            bankKeyword,
 
             // 训练状态
             trainingActive,
@@ -788,6 +877,8 @@ const app = createApp({
             // 导航栏方法
             onNavSelect,
             viewQuestionDetail,
+            clearBankSearch,
+            highlightKeyword,
             isInBank,
             addToBank,
             removeFromBank,
@@ -812,6 +903,7 @@ const app = createApp({
             addBlankQuestion,
             saveAnswers,
             deleteExam,
+            deleteHistoryExam,
             downloadRecord,
             formatDate
         };

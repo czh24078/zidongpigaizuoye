@@ -1,2 +1,20 @@
 .idea/
 out/
+
+# 敏感配置（含真实 API Key）
+.env
+
+# MySQL 数据文件（二进制，204MB）
+mysql_data/
+
+# SQLite 残留
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 系统文件
+Thumbs.db
+Desktop.ini

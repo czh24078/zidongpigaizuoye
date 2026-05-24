@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import StreamingResponse, FileResponse
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import config
@@ -261,12 +261,41 @@ async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession
 
 
 @router.get("/exams", response_model=list[ExamResponse])
-async def list_exams(session: AsyncSession = Depends(get_db)):
-    result = await session.execute(
-        select(Exam).order_by(Exam.created_at.desc())
-    )
+async def list_exams(
+    keyword: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    session: AsyncSession = Depends(get_db),
+):
+    stmt = select(Exam).order_by(Exam.created_at.desc())
+
+    if start_date:
+        try:
+            stmt = stmt.where(Exam.created_at >= datetime.fromisoformat(start_date))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_date 格式无效，请使用 ISO 格式（如 2025-01-01）")
+    if end_date:
+        try:
+            stmt = stmt.where(Exam.created_at <= datetime.fromisoformat(end_date))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="end_date 格式无效，请使用 ISO 格式（如 2025-12-31）")
+
+    result = await session.execute(stmt)
     exams = result.scalars().all()
-    return [e.to_pydantic() for e in exams]
+    exam_list = [e.to_pydantic() for e in exams]
+
+    if keyword:
+        kw = keyword.strip().lower()
+        filtered = []
+        for exam in exam_list:
+            matched = [q for q in exam.questions
+                       if kw in q.question_text.lower() or kw in q.standard_answer.lower()]
+            if matched:
+                exam.questions = matched
+                filtered.append(exam)
+        return filtered
+
+    return exam_list
 
 
 @router.get("/exam/{exam_id}", response_model=ExamResponse)
@@ -502,24 +531,58 @@ async def download_record(correction_id: str):
 # =====================================================================
 
 @router.get("/question-bank", response_model=list[QuestionBankItemSchema])
-async def list_question_bank(session: AsyncSession = Depends(get_db)):
-    result = await session.execute(
-        select(QuestionBankItem).order_by(QuestionBankItem.added_at.desc())
-    )
+async def list_question_bank(
+    keyword: Optional[str] = None,
+    question_no: Optional[str] = None,
+    session: AsyncSession = Depends(get_db),
+):
+    stmt = select(QuestionBankItem).order_by(QuestionBankItem.bank_no.asc())
+
+    if keyword:
+        kw = keyword.strip()
+        stmt = stmt.where(or_(
+            QuestionBankItem.question_text.contains(kw),
+            QuestionBankItem.standard_answer.contains(kw),
+            QuestionBankItem.analysis.contains(kw),
+        ))
+    if question_no:
+        try:
+            stmt = stmt.where(QuestionBankItem.bank_no == int(question_no.strip()))
+        except ValueError:
+            return []
+
+    result = await session.execute(stmt)
     items = result.scalars().all()
     return [item.to_pydantic() for item in items]
 
 
 @router.post("/question-bank", response_model=QuestionBankItemSchema)
 async def add_to_bank(payload: AddToBankRequest, session: AsyncSession = Depends(get_db)):
-    existing = await session.execute(
-        select(QuestionBankItem).where(
-            QuestionBankItem.exam_id == payload.exam_id,
-            QuestionBankItem.question_no == payload.question_no,
+    # 防御：如果 exam_id 指向不存在的 exam，视为 None
+    if payload.exam_id:
+        check = await session.execute(select(Exam.id).where(Exam.id == payload.exam_id))
+        if not check.scalar_one_or_none():
+            payload.exam_id = None
+    if payload.exam_id:
+        existing = await session.execute(
+            select(QuestionBankItem).where(
+                QuestionBankItem.exam_id == payload.exam_id,
+                QuestionBankItem.question_no == payload.question_no,
+            )
         )
-    )
+    else:
+        existing = await session.execute(
+            select(QuestionBankItem).where(
+                QuestionBankItem.question_text == payload.question_text,
+                QuestionBankItem.standard_answer == payload.standard_answer,
+            )
+        )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="该题目已在题库中")
+
+    # 分配入库序号：最大 bank_no + 1
+    max_no_result = await session.execute(select(func.max(QuestionBankItem.bank_no)))
+    max_no = max_no_result.scalar() or 0
 
     item = QuestionBankItem(
         exam_id=payload.exam_id,
@@ -528,6 +591,7 @@ async def add_to_bank(payload: AddToBankRequest, session: AsyncSession = Depends
         standard_answer=payload.standard_answer,
         analysis=payload.analysis,
         exam_filename=payload.exam_filename,
+        bank_no=max_no + 1,
         added_at=datetime.now(),
     )
     session.add(item)

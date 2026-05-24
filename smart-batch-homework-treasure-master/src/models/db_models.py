@@ -25,8 +25,8 @@ class Exam(Base):
                              cascade="all, delete-orphan", lazy="selectin")
     corrections = relationship("Correction", back_populates="exam",
                                foreign_keys="Correction.exam_id", lazy="selectin")
-    bank_items = relationship("QuestionBankItem", back_populates="exam",
-                              cascade="all, delete-orphan", lazy="selectin")
+    bank_items = relationship("QuestionBankItem", back_populates="exam", lazy="selectin",
+                              foreign_keys="QuestionBankItem.exam_id")
 
     @classmethod
     def from_pydantic(cls, data: "ExamResponse") -> "Exam":
@@ -186,12 +186,13 @@ class QuestionBankItem(Base):
     __tablename__ = "question_bank"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    exam_id = Column(String(36), ForeignKey("exams.id", ondelete="CASCADE"), nullable=False)
+    exam_id = Column(String(36), ForeignKey("exams.id", ondelete="SET NULL"), nullable=True)
     question_no = Column(String(50), nullable=False)
     question_text = Column(Text, nullable=False)
     standard_answer = Column(Text, nullable=False)
     analysis = Column(Text, nullable=True)
     exam_filename = Column(String(500), nullable=False)
+    bank_no = Column(Integer, nullable=True)
     added_at = Column(DateTime, nullable=False, default=datetime.now)
 
     exam = relationship("Exam", back_populates="bank_items")
@@ -206,5 +207,6 @@ class QuestionBankItem(Base):
             standard_answer=self.standard_answer,
             analysis=self.analysis,
             exam_filename=self.exam_filename,
+            bank_no=self.bank_no,
             added_at=self.added_at,
         )

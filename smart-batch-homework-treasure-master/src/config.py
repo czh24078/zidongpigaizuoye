@@ -17,15 +17,20 @@ class Config:
     PORT = int(os.getenv("PORT", "8000"))
     DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
-    # SQLite 数据库配置
-    SQLITE_PATH = os.getenv("SQLITE_PATH", str(Path(__file__).resolve().parent.parent / "homework.db"))
+    # MySQL 配置
+    MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
+    MYSQL_PORT = os.getenv("MYSQL_PORT", "3306")
+    MYSQL_USER = os.getenv("MYSQL_USER", "root")
+    MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "homework123")
+    MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "homework")
 
     @classmethod
     def database_url(cls) -> str:
-        db_path = Path(cls.SQLITE_PATH)
-        if not db_path.is_absolute():
-            db_path = Path(__file__).resolve().parent.parent / db_path
-        return f"sqlite+aiosqlite:///{str(db_path).replace(chr(92), '/')}"
+        return (
+            f"mysql+aiomysql://{cls.MYSQL_USER}:{cls.MYSQL_PASSWORD}"
+            f"@{cls.MYSQL_HOST}:{cls.MYSQL_PORT}/{cls.MYSQL_DATABASE}"
+            f"?charset=utf8mb4"
+        )
 
     # OCR 配置
     OCR_ENABLED = os.getenv("OCR_ENABLED", "True").lower() == "true"

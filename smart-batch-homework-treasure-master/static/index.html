@@ -219,25 +219,43 @@
                         <div class="card-header">
                             <el-icon><folder-opened /></el-icon>
                             <span>历史题目</span>
-                            <el-tag size="small" effect="plain" style="margin-left:8px;">共 {{ allQuestions.length }} 题</el-tag>
+                            <el-tag size="small" effect="plain" style="margin-left:8px;">共 {{ filteredQuestions.length }} 题</el-tag>
                             <el-button type="primary" text size="small" @click="fetchExams" style="margin-left:auto;">
                                 <el-icon><refresh /></el-icon>刷新
                             </el-button>
                         </div>
                     </template>
 
-                    <div v-if="allQuestions.length === 0" class="empty-history">
-                        <el-empty description="暂无历史题目，上传试题图片后会自动保存" />
+                    <!-- 搜索栏 -->
+                    <div class="search-bar">
+                        <el-input
+                            v-model="historyKeyword"
+                            placeholder="搜索题目关键字..."
+                            clearable
+                            size="small"
+                            style="width: 260px;"
+                            @clear="historyKeyword = ''"
+                        >
+                            <template #prefix>
+                                <el-icon><search /></el-icon>
+                            </template>
+                        </el-input>
+                        <el-button size="small" @click="historyKeyword = ''" style="margin-left: 8px;">重置</el-button>
+                    </div>
+
+                    <div v-if="filteredQuestions.length === 0" class="empty-history">
+                        <el-empty :description="historyKeyword ? '未找到匹配的题目' : '暂无历史题目，上传试题图片后会自动保存'" />
                     </div>
 
                     <div v-else class="question-history-list">
-                        <div v-for="(q, idx) in allQuestions" :key="q.examId + '-' + idx"
+                        <div v-for="(q, idx) in filteredQuestions" :key="q.examId + '-' + idx"
                              class="question-history-item" @click="viewQuestionDetail(q)">
                             <div class="question-history-index">{{ idx + 1 }}</div>
                             <div class="question-history-content">
-                                <div class="question-history-text">{{ q.question_text || '（无题干）' }}</div>
+                                <div class="question-history-text" v-html="highlightKeyword(q.question_text || '（无题干）')"></div>
                                 <div class="question-history-meta">
                                     <el-tag size="small" type="info" effect="plain">{{ q.examFilename }}</el-tag>
+                                    <span class="question-history-date" v-if="q.examCreatedAt">{{ formatDate(q.examCreatedAt) }}</span>
                                     <span class="question-history-answer" v-if="q.standard_answer">答案：{{ q.standard_answer }}</span>
                                 </div>
                             </div>
@@ -245,6 +263,9 @@
                                        @click.stop="addToBank(q)"
                                        :disabled="isInBank(q)">
                                 {{ isInBank(q) ? '已加入' : '加入题库' }}
+                            </el-button>
+                            <el-button type="danger" size="small" text @click.stop="deleteHistoryExam(q.examId)">
+                                <el-icon><delete /></el-icon>
                             </el-button>
                         </div>
                     </div>
@@ -271,28 +292,57 @@
                         <div class="card-header">
                             <el-icon><collection /></el-icon>
                             <span>我的题库</span>
-                            <el-tag size="small" effect="plain" style="margin-left:8px;">共 {{ questionBank.length }} 题</el-tag>
+                            <el-tag size="small" effect="plain" style="margin-left:8px;">共 {{ filteredBank.length }} 题</el-tag>
                             <el-button v-if="questionBank.length > 0" type="danger" text size="small" @click="clearBank" style="margin-left:auto;">
                                 <el-icon><delete /></el-icon>清空题库
                             </el-button>
                         </div>
                     </template>
 
-                    <div v-if="questionBank.length === 0" class="empty-history">
-                        <el-empty description="题库为空，可从“历史题目”中添加题目" />
+                    <!-- 搜索栏 -->
+                    <div class="search-bar">
+                        <el-input
+                            v-model="bankQuestionNo"
+                            placeholder="按题号搜索..."
+                            clearable
+                            size="small"
+                            style="width: 180px;"
+                            @clear="bankQuestionNo = ''"
+                        >
+                            <template #prefix>
+                                <el-icon><search /></el-icon>
+                            </template>
+                        </el-input>
+                        <el-input
+                            v-model="bankKeyword"
+                            placeholder="搜索题目关键字..."
+                            clearable
+                            size="small"
+                            style="width: 260px; margin-left: 12px;"
+                            @clear="bankKeyword = ''"
+                        >
+                            <template #prefix>
+                                <el-icon><search /></el-icon>
+                            </template>
+                        </el-input>
+                        <el-button size="small" @click="clearBankSearch" style="margin-left: 8px;">重置</el-button>
+                    </div>
+
+                    <div v-if="filteredBank.length === 0" class="empty-history">
+                        <el-empty :description="(bankKeyword || bankQuestionNo) ? '未找到匹配的题目' : '题库为空，可从“历史题目”中添加题目'" />
                     </div>
 
                     <div v-else class="question-history-list">
-                        <div v-for="(q, idx) in questionBank" :key="idx" class="question-history-item">
-                            <div class="question-history-index bank-index">{{ idx + 1 }}</div>
+                        <div v-for="(q, idx) in filteredBank" :key="q.id" class="question-history-item">
+                            <div class="question-history-index bank-index">{{ q.bank_no }}</div>
                             <div class="question-history-content" @click="viewQuestionDetail(q)">
-                                <div class="question-history-text">{{ q.question_text || '（无题干）' }}</div>
+                                <div class="question-history-text" v-html="highlightKeyword(q.question_text || '（无题干）')"></div>
                                 <div class="question-history-meta">
                                     <el-tag size="small" type="info" effect="plain">{{ q.examFilename }}</el-tag>
                                     <span class="question-history-answer" v-if="q.standard_answer">答案：{{ q.standard_answer }}</span>
                                 </div>
                             </div>
-                            <el-button type="danger" size="small" text @click="removeFromBank(idx)">
+                            <el-button type="danger" size="small" text @click="removeFromBank(q.id)">
                                 <el-icon><delete /></el-icon>移除
                             </el-button>
                         </div>
