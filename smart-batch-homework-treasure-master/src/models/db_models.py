@@ -57,6 +57,7 @@ class Question(Base):
     question_no = Column(String(50), nullable=False)
     question_text = Column(Text, nullable=False)
     standard_answer = Column(Text, nullable=False)
+    options = Column(Text, nullable=True)
     analysis = Column(Text, nullable=True)
 
     exam = relationship("Exam", back_populates="questions")
@@ -67,6 +68,7 @@ class Question(Base):
             question_no=data.question_no,
             question_text=data.question_text,
             standard_answer=data.standard_answer,
+            options=data.options,
             analysis=data.analysis,
         )
 
@@ -76,6 +78,7 @@ class Question(Base):
             question_no=self.question_no,
             question_text=self.question_text,
             standard_answer=self.standard_answer,
+            options=self.options,
             analysis=self.analysis,
         )
 

@@ -256,6 +256,23 @@ async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession
 
     db_exam = Exam.from_pydantic(exam)
     session.add(db_exam)
+
+    # 自动将试题题目加入题库
+    max_no_result = await session.execute(select(func.max(QuestionBankItem.bank_no)))
+    max_no = max_no_result.scalar() or 0
+    for i, q in enumerate(questions_data, start=1):
+        bank_item = QuestionBankItem(
+            exam_id=exam.id,
+            question_no=q.get("question_no", str(i)),
+            question_text=q.get("question_text", ""),
+            standard_answer=q.get("standard_answer", ""),
+            analysis=q.get("analysis", ""),
+            exam_filename=display_name,
+            bank_no=max_no + i,
+            added_at=datetime.now(),
+        )
+        session.add(bank_item)
+
     await session.commit()
     return exam
 
@@ -380,6 +397,7 @@ async def correct_homework(
 
     correction_id = str(uuid.uuid4())
     created_at = datetime.now()
+    final_exam_id = exam.id if exam else None
 
     record_path = _save_record_docx(
         correction_id=correction_id, filename=file.filename or "unknown",
@@ -392,18 +410,38 @@ async def correct_homework(
     db_correction = Correction(
         id=correction_id, filename=file.filename or "unknown",
         result=result_text, score=score, summary=summary,
-        exam_id=exam.id if exam else None,
+        exam_id=final_exam_id,
         record_path=record_path, created_at=created_at,
     )
     for d in details_objs:
         db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
     session.add(db_correction)
+
+    # 自动将批改识别出的题目存入历史题目（无关联试题时自动创建试题记录）
+    if details_objs and not exam:
+        history_exam_id = str(uuid.uuid4())
+        final_exam_id = history_exam_id
+        db_history_exam = Exam(
+            id=history_exam_id,
+            filename=f"[批改] {file.filename or 'unknown'}",
+            source="correction",
+            created_at=created_at,
+            questions=[Question(
+                question_no=d.question_no,
+                question_text=d.question_text,
+                standard_answer=d.standard_answer,
+                analysis=d.analysis,
+            ) for d in details_objs],
+        )
+        session.add(db_history_exam)
+        db_correction.exam_id = history_exam_id
+
     await session.commit()
 
     return CorrectionResponse(
         id=correction_id, filename=file.filename or "unknown",
         result=result_text, score=score,
-        exam_id=exam.id if exam else None,
+        exam_id=final_exam_id,
         details=details_objs or None,
         record_path=record_path, created_at=created_at,
     )
@@ -483,6 +521,26 @@ async def correct_homework_stream(
                 for d in details_objs:
                     db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
                 save_session.add(db_correction)
+
+                # 自动将批改识别出的题目存入历史题目（无关联试题时自动创建试题记录）
+                if details_objs and not exam:
+                    from src.models.db_models import Question as QDB
+                    history_exam_id = str(uuid.uuid4())
+                    db_history_exam = Exam(
+                        id=history_exam_id,
+                        filename=f"[批改] {file.filename or 'unknown'}",
+                        source="correction",
+                        created_at=created_at,
+                        questions=[QDB(
+                            question_no=d.question_no,
+                            question_text=d.question_text,
+                            standard_answer=d.standard_answer,
+                            analysis=d.analysis,
+                        ) for d in details_objs],
+                    )
+                    save_session.add(db_history_exam)
+                    db_correction.exam_id = history_exam_id
+
                 await save_session.commit()
 
         except Exception as e:

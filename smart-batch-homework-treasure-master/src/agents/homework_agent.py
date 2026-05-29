@@ -33,16 +33,21 @@ SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
 总分：**85 / 100**
 
 ## 3. 答案及解析
-- **第1题**：**[15/20]** ✅ 
+- **第1题**：**[15/20]** ✅
   - **答案**：不能。
   - **解析**：G=mg=0.54kg×10N/kg=5.4N > 5N，超量程。
-- **第2题**：**[10/20]** ❌ 
+- **第2题**：**[10/20]** ❌
   - **答案**：28N。
   - **解析**：体积单位错误，应为 m³。
 
 【注意】
 - 即使为了简洁，也不能牺牲数字的准确性。
 - 解析要简短，但公式中的数字必须齐全。
+
+【输出末尾】请在批改报告最后，附加一段 JSON 格式的逐题详情（不要放在代码块中）：
+```json
+[{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "正确标准答案", "is_correct": true, "score": 15, "full_score": 20, "analysis": "简要解析"}]
+```
 """
 
 # 从试题图片中提取题目并生成标准答案（图片模式）
@@ -163,7 +168,13 @@ SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
   - **答案**：[正确结果]
   - **解析**：[30字内核心理由，包含关键计算步骤]
 
-请直接输出结果，确保公式和数值的完整性。"""
+请直接输出结果，确保公式和数值的完整性。
+
+【输出末尾】请在批改报告最后，附加一段 JSON 格式的逐题详情（不要放在代码块中）：
+```json
+[{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "正确标准答案", "is_correct": true, "score": 15, "full_score": 20, "analysis": "简要解析"}]
+```
+"""
 
 # AI 出题 Prompt
 GENERATE_CHINESE_PROMPT = """你是一位资深语文教师，请生成{count}道{grade}语文练习题。
@@ -425,6 +436,9 @@ class HomeworkAgent:
         messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
         response = await self.llm.ainvoke(messages)
         result = response.content or ""
+        result, details = self._extract_details_json(result)
+        if details:
+            self.last_details = details
         self.last_score = self._extract_score(result)
         return result
     
@@ -441,6 +455,9 @@ class HomeworkAgent:
         logger.info(f"使用 OCR 文字模式批改作业: {self._last_filename}")
         response = await self.llm.ainvoke(messages)
         result = response.content or ""
+        result, details = self._extract_details_json(result)
+        if details:
+            self.last_details = details
         self.last_score = self._extract_score(result)
         return result
 
@@ -607,8 +624,11 @@ class HomeworkAgent:
                             full_content += chunk.content
                             yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-                    self.last_score = self._extract_score(full_content)
-                    self._last_stream_result = full_content
+                    stripped, details = self._extract_details_json(full_content)
+                    if details:
+                        self.last_details = details
+                    self.last_score = self._extract_score(stripped)
+                    self._last_stream_result = stripped
                     return
 
             # 图片模式 + 标准答案
@@ -626,8 +646,11 @@ class HomeworkAgent:
                     full_content += chunk.content
                     yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-            self.last_score = self._extract_score(full_content)
-            self._last_stream_result = full_content
+            stripped, details = self._extract_details_json(full_content)
+            if details:
+                self.last_details = details
+            self.last_score = self._extract_score(stripped)
+            self._last_stream_result = stripped
             return
 
         # 无标准答案模式（原有逻辑）
@@ -649,8 +672,11 @@ class HomeworkAgent:
                         full_content += chunk.content
                         yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-                self.last_score = self._extract_score(full_content)
-                self._last_stream_result = full_content
+                stripped, details = self._extract_details_json(full_content)
+                if details:
+                    self.last_details = details
+                self.last_score = self._extract_score(stripped)
+                self._last_stream_result = stripped
                 return
 
         # 图片模式
@@ -665,9 +691,35 @@ class HomeworkAgent:
                 full_content += chunk.content
                 yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-        self.last_score = self._extract_score(full_content)
-        self._last_stream_result = full_content
+        stripped, details = self._extract_details_json(full_content)
+        if details:
+            self.last_details = details
+        self.last_score = self._extract_score(stripped)
+        self._last_stream_result = stripped
 
+
+    @staticmethod
+    def _extract_details_json(text: str) -> tuple[str, Optional[List[dict]]]:
+        """从批改文本末尾提取 JSON 详情，返回 (清理后的文本, 详情列表或None)。"""
+        # 匹配最后的 ```json [...] ``` 代码块
+        m = re.search(r'```json\s*(\[[\s\S]*?\])\s*```\s*$', text)
+        if m:
+            try:
+                details = json.loads(m.group(1))
+                if isinstance(details, list):
+                    return text[:m.start()].rstrip(), details
+            except Exception:
+                pass
+        # 兜底: 匹配最后的纯 JSON 数组
+        m = re.search(r'(\[[\s\S]*\])\s*$', text)
+        if m:
+            try:
+                details = json.loads(m.group(1))
+                if isinstance(details, list) and details:
+                    return text[:m.start()].rstrip(), details
+            except Exception:
+                pass
+        return text, None
 
     def _extract_score(self, text: str) -> int:
         patterns = [
