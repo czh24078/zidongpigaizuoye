@@ -9,7 +9,7 @@ echo.
 
 :: 配置（按需修改）
 set MYSQL_HOST=127.0.0.1
-set MYSQL_PORT=3306
+set MYSQL_PORT=3307
 set MYSQL_USER=root
 set MYSQL_PASSWORD=
 set MYSQL_DATABASE=homework

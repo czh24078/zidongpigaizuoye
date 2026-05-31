@@ -8,6 +8,7 @@ class QuestionItem(BaseModel):
     question_no: str                       # 题号，如 "1"、"第一大题-1"
     question_text: str                     # 题干
     standard_answer: str                   # 标准答案
+    options: Optional[str] = None          # 选择题选项（如 "A. xxx B. xxx C. xxx D. xxx"）
     analysis: Optional[str] = None         # 解题分析（可选）
 
 

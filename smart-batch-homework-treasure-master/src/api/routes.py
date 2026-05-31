@@ -377,13 +377,14 @@ async def correct_homework(
         standard_answers = [q.model_dump() for q in exam.questions]
 
     result_text = ""
-    score: Optional[int] = 85
+    score: Optional[int] = None
     details_objs: list[CorrectionDetail] = []
 
     if AGENT_AVAILABLE and homework_agent is not None:
         try:
             result_text = await homework_agent.correct(file_path, standard_answers=standard_answers)
-            score = getattr(homework_agent, "last_score", None) or score
+            agent_score = getattr(homework_agent, "last_score", None)
+            score = agent_score if agent_score is not None else score
             raw_details = getattr(homework_agent, "last_details", None) or []
             details_objs = _details_from_dicts(raw_details)
         except Exception:
@@ -405,7 +406,8 @@ async def correct_homework(
         result_markdown=result_text, created_at=created_at,
     )
 
-    summary = f"作业批改完成，总分 {score} 分。" + (f"（基于试题 {exam.filename}）" if exam else "")
+    summary = f"作业批改完成，总分 {score} 分。" if score is not None else "作业批改完成。"
+    summary += f"（基于试题 {exam.filename}）" if exam else ""
 
     db_correction = Correction(
         id=correction_id, filename=file.filename or "unknown",
@@ -506,7 +508,8 @@ async def correct_homework_stream(
                 result_markdown=result_text, created_at=created_at,
             )
 
-            summary = f"作业批改完成，总分 {score} 分。" + (f"（基于试题 {exam.filename}）" if exam else "")
+            summary = f"作业批改完成，总分 {score} 分。" if score is not None else "作业批改完成。"
+            summary += f"（基于试题 {exam.filename}）" if exam else ""
 
             # 因为 event_generator 闭包捕获了外层的 session，但 SSE 流结束后
             # session 可能已关闭。这里我们创建一个新的 DB session 来持久化。

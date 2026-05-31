@@ -721,12 +721,19 @@ class HomeworkAgent:
                 pass
         return text, None
 
-    def _extract_score(self, text: str) -> int:
+    def _extract_score(self, text: str) -> Optional[int]:
+        """从批改文本中提取总分，支持多种常见格式；无法识别时从逐题详情汇总。"""
         patterns = [
-            r"总分[：:]\s*(\d+)\s*/\s*100",
-            r"总分[：:]\s*(\d+)",
-            r"得分[：:]\s*(\d+)\s*/\s*100",
+            r"总分[：:]\s*\*{0,2}(\d+)\*{0,2}\s*/\s*\*{0,2}100\*{0,2}",
+            r"总分[：:]\s*\*{0,2}(\d+)\*{0,2}",
+            r"得分[：:]\s*\*{0,2}(\d+)\*{0,2}\s*/\s*\*{0,2}100\*{0,2}",
+            r"得分[：:]\s*\*{0,2}(\d+)\*{0,2}",
             r"(\d+)\s*分\s*/\s*100",
+            r"总得分[：:]\s*(\d+)",
+            r"总分\s*[-—]\s*(\d+)",
+            r"评分[：:]\s*(\d+)",
+            r"获得了?\s*(\d+)\s*分",
+            r"[Ss]core[：:]\s*(\d+)",
         ]
         for pattern in patterns:
             match = re.search(pattern, text)
@@ -735,7 +742,17 @@ class HomeworkAgent:
                     return int(match.group(1))
                 except ValueError:
                     continue
-        return 85
+
+        # 从逐题详情汇总计算总分
+        if self.last_details:
+            total = sum(
+                d.get("score", 0) for d in self.last_details
+                if isinstance(d, dict) and isinstance(d.get("score"), (int, float))
+            )
+            if total > 0:
+                return int(total)
+
+        return None
 
     # ------------------------------------------------------------------
     # AI 出题

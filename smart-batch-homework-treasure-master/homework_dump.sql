@@ -150,6 +150,7 @@ CREATE TABLE `questions` (
   `question_no` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
   `question_text` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `standard_answer` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `options` text COLLATE utf8mb4_unicode_ci,
   `analysis` text COLLATE utf8mb4_unicode_ci,
   PRIMARY KEY (`id`),
   KEY `exam_id` (`exam_id`),
