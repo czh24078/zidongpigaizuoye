@@ -9,7 +9,7 @@ load_dotenv(_dotenv_path)
 class Config:
     # 阿里云百炼 API 配置（优先使用环境变量，否则使用硬编码值）
     MODEL_API_KEY = os.getenv("MODEL_API_KEY", "sk-10c2d9b02f9a4fe1ad7a800d31f8cc2d")
-    MODEL_NAME = os.getenv("MODEL_NAME", "qwen-vl-max-latest")
+    MODEL_NAME = os.getenv("MODEL_NAME", "qwen-vl-max")
     MODEL_BASE_URL = os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 
     # 应用配置
