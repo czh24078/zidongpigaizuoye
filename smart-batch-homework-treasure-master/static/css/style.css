@@ -1423,3 +1423,21 @@ body {
     justify-content: flex-end;
     margin-top: 10px;
 }
+
+/* AI 离线警告条 */
+.ai-offline-warning {
+    background: #fef0f0;
+    border: 1px solid #f56c6c;
+    border-left: 4px solid #f56c6c;
+    color: #c45656;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.6;
+}
+.ai-offline-warning strong {
+    display: block;
+    font-size: 15px;
+    margin-bottom: 4px;
+}

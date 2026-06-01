@@ -7,7 +7,7 @@
     <!-- Element Plus CSS -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <!-- 自定义样式 -->
-    <link rel="stylesheet" href="/static/css/style.css?v=18">
+    <link rel="stylesheet" href="/static/css/style.css?v=19">
 </head>
 <body>
     <div id="app">
@@ -50,9 +50,10 @@
             <!-- 右侧内容区 -->
             <main class="app-main">
             <!-- AI 不可用警告 -->
-            <el-alert v-if="!aiAvailable" title="AI 服务不可用 — 当前为演示模式" type="error"
-                description="请检查 .env 文件中的 MODEL_API_KEY 是否正确配置。所有批改结果均为 Mock 数据，非真实 AI 输出。"
-                show-icon :closable="false" style="margin-bottom: 16px;" />
+            <div v-if="!aiAvailable" class="ai-offline-warning">
+                <strong>AI 服务不可用 — 当前为演示模式</strong>
+                请检查 .env 文件中的 MODEL_API_KEY 是否正确配置。所有批改结果均为 Mock 数据，非真实 AI 输出。
+            </div>
             <!-- 试题管理面板 -->
             <el-card v-if="activeNav === 'home'" class="exam-card" shadow="hover" style="margin-bottom:24px;">
                 <template #header>
@@ -608,6 +609,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=16"></script>
+    <script src="/static/js/app.js?v=17"></script>
 </body>
 </html>
