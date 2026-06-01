@@ -44,11 +44,9 @@ SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
 - 即使为了简洁，也不能牺牲数字的准确性。
 - 解析要简短，但公式中的数字必须齐全。
 
-【输出末尾】请在批改报告最后，附加一段 JSON 格式的逐题详情，放在代码块中（代码块之后不要再输出任何文字）：
-```json
+【输出末尾】请在批改报告最后一行，直接以纯文本输出一段 JSON 逐题详情（严禁使用任何代码块、严禁用 ``` 包裹）：
 [{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "正确标准答案", "is_correct": true, "score": 15, "full_score": 20, "analysis": "简要解析"}]
-```
-"""
+（输出 JSON 后立即结束，不要附加任何额外内容）"""
 
 # 从试题图片中提取题目并生成标准答案（图片模式）
 EXTRACT_EXAM_PROMPT = """你是一位严谨的学科老师。请识别图片中的题目并生成标准答案。
@@ -170,11 +168,9 @@ SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
 
 请直接输出结果，确保公式和数值的完整性。
 
-【输出末尾】请在批改报告最后，附加一段 JSON 格式的逐题详情，放在代码块中（代码块之后不要再输出任何文字）：
-```json
+【输出末尾】请在批改报告最后一行，直接以纯文本输出一段 JSON 逐题详情（严禁使用任何代码块、严禁用 ``` 包裹）：
 [{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "正确标准答案", "is_correct": true, "score": 15, "full_score": 20, "analysis": "简要解析"}]
-```
-"""
+（输出 JSON 后立即结束，不要附加任何额外内容）"""
 
 # AI 出题 Prompt
 GENERATE_CHINESE_PROMPT = """你是一位资深语文教师，请生成{count}道{grade}语文练习题。
@@ -700,32 +696,38 @@ class HomeworkAgent:
 
     @staticmethod
     def _extract_details_json(text: str) -> tuple[str, Optional[List[dict]]]:
-        """从批改文本中提取 JSON 详情，返回 (清理后的文本, 详情列表或None)。"""
-        # 找最后一个 ```json ... ``` 代码块
-        matches = list(re.finditer(r'```json\s*(\[[\s\S]*?\])\s*```', text))
-        if matches:
-            for m in reversed(matches):
+        """从批改文本中提取 JSON 详情，返回 (清理后的文本, 详情列表或None)。
+        返回的文本保证不含任何 ``` 代码块。"""
+        details = None
+
+        # 尝试从 ```json ... ``` 代码块中提取
+        for m in reversed(list(re.finditer(r'```json\s*(\[[\s\S]*?\])\s*```', text))):
+            try:
+                parsed = json.loads(m.group(1))
+                if isinstance(parsed, list):
+                    details = parsed
+                    break
+            except Exception:
+                continue
+
+        # 兜底: 尝试从纯 JSON 数组中提取
+        if details is None:
+            for m in reversed(list(re.finditer(r'\[[\s\S]*?\]', text))):
                 try:
-                    details = json.loads(m.group(1))
-                    if isinstance(details, list):
-                        cleaned = text[:m.start()] + text[m.end():]
-                        return cleaned.rstrip(), details
+                    parsed = json.loads(m.group(0))
+                    if isinstance(parsed, list) and parsed and "question_no" in str(parsed):
+                        details = parsed
+                        break
                 except Exception:
                     continue
-        # 兜底: 找最后的纯 JSON 数组（非贪婪，找最后一个完整 JSON 数组）
-        matches = list(re.finditer(r'\[[\s\S]*?\]', text))
-        if matches:
-            for m in reversed(matches):
-                try:
-                    details = json.loads(m.group(0))
-                    if isinstance(details, list) and details and "question_no" in str(details):
-                        cleaned = text[:m.start()] + text[m.end():]
-                        return cleaned.rstrip(), details
-                except Exception:
-                    continue
-        # 最终兜底：清除所有残留的代码块
-        cleaned = re.sub(r'```[\s\S]*?```', '', text).strip()
-        return cleaned if cleaned != text else text, None
+
+        # 无论如何，清除所有 ``` 代码块
+        cleaned = re.sub(r'```[\s\S]*?```', '', text)
+        # 也清除可能残留的孤立 ``` 标记
+        cleaned = re.sub(r'```', '', cleaned)
+        # 压缩多余空行（连续 3 个以上空行 → 2 个空行）
+        cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
+        return cleaned.strip(), details
 
     def _extract_score(self, text: str) -> Optional[int]:
         """从批改文本中提取总分，支持多种常见格式；无法识别时从逐题详情汇总。"""
