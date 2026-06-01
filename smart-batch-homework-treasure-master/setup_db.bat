@@ -38,34 +38,37 @@ if %errorlevel% neq 0 (
 )
 echo [OK] 数据导入完成
 
-echo [3/3] 写入 .env 配置...
-(
-echo # 阿里云百炼 API 配置
-echo MODEL_API_KEY=your_api_key_here
-echo MODEL_NAME=qwen-vl-max-latest
-echo MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-echo.
-echo # 应用配置
-echo HOST=127.0.0.1
-echo PORT=8000
-echo DEBUG=False
-echo.
-echo # 性能优化配置
-echo MODEL_MAX_TOKENS=2048
-echo MODEL_STREAMING=True
-echo.
-echo # MySQL 数据库配置
-echo MYSQL_HOST=%MYSQL_HOST%
-echo MYSQL_PORT=%MYSQL_PORT%
-echo MYSQL_USER=%MYSQL_USER%
-echo MYSQL_PASSWORD=%MYSQL_PASSWORD%
-echo MYSQL_DATABASE=%MYSQL_DATABASE%
-echo.
-echo # OCR 配置
-echo OCR_ENABLED=True
-) > "%~dp0.env"
-
-echo [OK] .env 已生成
+echo [3/3] 生成 .env 配置...
+if exist "%~dp0.env" (
+    echo [SKIP] .env 已存在，跳过生成（如需重新生成请先手动删除 .env）
+) else (
+    (
+    echo # 阿里云百炼 API 配置
+    echo MODEL_API_KEY=your_api_key_here
+    echo MODEL_NAME=qwen-vl-max
+    echo MODEL_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+    echo.
+    echo # 应用配置
+    echo HOST=127.0.0.1
+    echo PORT=8000
+    echo DEBUG=False
+    echo.
+    echo # 性能优化配置
+    echo MODEL_MAX_TOKENS=2048
+    echo MODEL_STREAMING=True
+    echo.
+    echo # MySQL 数据库配置
+    echo MYSQL_HOST=%MYSQL_HOST%
+    echo MYSQL_PORT=%MYSQL_PORT%
+    echo MYSQL_USER=%MYSQL_USER%
+    echo MYSQL_PASSWORD=%MYSQL_PASSWORD%
+    echo MYSQL_DATABASE=%MYSQL_DATABASE%
+    echo.
+    echo # OCR 配置
+    echo OCR_ENABLED=True
+    ) > "%~dp0.env"
+    echo [OK] .env 已生成，请编辑填入你的 API Key
+)
 
 echo.
 echo ============================================

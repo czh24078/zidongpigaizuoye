@@ -52,6 +52,9 @@ const app = createApp({
         const trainingChecked = ref(false);
         const trainingScore = ref(0);
 
+        // AI 服务状态
+        const aiAvailable = ref(true);
+
         // AI 出题状态
         const aiGeneratedQuestions = ref([]);
         const aiForm = reactive({ subject: '语文', grade: '初中', difficulty: '中等', count: 5, requirement: '' });
@@ -802,7 +805,16 @@ const app = createApp({
         }
 
         // ==================== 生命周期 ====================
+        async function checkHealth() {
+            try {
+                const resp = await axios.get('/api/health', { timeout: 5000 });
+                aiAvailable.value = resp.data?.ai_available !== false;
+            } catch {
+                aiAvailable.value = false;
+            }
+        }
         onMounted(() => {
+            checkHealth();
             fetchHistory();
             fetchExams();
             fetchQuestionBank();
@@ -853,6 +865,9 @@ const app = createApp({
             trainingQuestions,
             trainingChecked,
             trainingScore,
+
+            // AI 服务状态
+            aiAvailable,
 
             // AI 出题状态
             aiGeneratedQuestions,

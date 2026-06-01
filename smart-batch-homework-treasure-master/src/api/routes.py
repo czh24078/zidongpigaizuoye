@@ -488,8 +488,13 @@ async def correct_homework_stream(
             else:
                 for chunk in _mock_stream_chunks():
                     yield f"data: {chunk}\n\n"
-                    await asyncio.sleep(0.2)
-                    full_content += chunk
+                    await asyncio.sleep(0.1)
+                    try:
+                        cd = json.loads(chunk)
+                        if cd.get("event") == "content":
+                            full_content += cd.get("text", "")
+                    except Exception:
+                        pass
 
             yield f"data: {json.dumps({'event': 'end', 'message': '批改完成'}, ensure_ascii=False)}\n\n"
 
@@ -554,13 +559,12 @@ async def correct_homework_stream(
 
 
 def _mock_stream_chunks():
-    return [
-        '{"event": "progress", "message": "正在识别图片内容..."}',
-        '{"event": "progress", "message": "识别完成，开始分析题目..."}',
-        '{"event": "result", "section": "填空题", "score": "18/20", "detail": "第3题计算失误，其余正确。"}',
-        '{"event": "result", "section": "选择题", "score": "16/20", "detail": "第8题概念混淆。"}',
-        '{"event": "summary", "total_score": 85, "message": "基础扎实，注意规范与细节。"}',
-    ]
+    """将 Mock 批改报告拆分为 content 事件流，与非流式 MOCK_CORRECTION_RESULT 一致。"""
+    lines = MOCK_CORRECTION_RESULT.strip().split("\n")
+    chunks = []
+    for line in lines:
+        chunks.append(json.dumps({"event": "content", "text": line + "\n"}, ensure_ascii=False))
+    return chunks
 
 
 # =====================================================================
@@ -792,4 +796,4 @@ async def health_check(session: AsyncSession = Depends(get_db)):
         db_status = "ok"
     except Exception:
         db_status = "error"
-    return {"status": "ok", "db": db_status, "timestamp": datetime.now().isoformat()}
+    return {"status": "ok", "db": db_status, "ai_available": AGENT_AVAILABLE, "timestamp": datetime.now().isoformat()}
