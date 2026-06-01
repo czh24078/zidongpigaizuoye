@@ -625,6 +625,7 @@ class HomeworkAgent:
                         self.last_details = details
                     self.last_score = self._extract_score(stripped)
                     self._last_stream_result = stripped
+                    yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
                     return
 
             # 图片模式 + 标准答案
@@ -647,6 +648,7 @@ class HomeworkAgent:
                 self.last_details = details
             self.last_score = self._extract_score(stripped)
             self._last_stream_result = stripped
+            yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
             return
 
         # 无标准答案模式（原有逻辑）
@@ -673,6 +675,7 @@ class HomeworkAgent:
                     self.last_details = details
                 self.last_score = self._extract_score(stripped)
                 self._last_stream_result = stripped
+                yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
                 return
 
         # 图片模式
@@ -692,6 +695,7 @@ class HomeworkAgent:
             self.last_details = details
         self.last_score = self._extract_score(stripped)
         self._last_stream_result = stripped
+        yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
 
 
     @staticmethod
@@ -700,32 +704,39 @@ class HomeworkAgent:
         返回的文本保证不含任何 ``` 代码块。"""
         details = None
 
-        # 尝试从 ```json ... ``` 代码块中提取
-        for m in reversed(list(re.finditer(r'```json\s*(\[[\s\S]*?\])\s*```', text))):
-            try:
-                parsed = json.loads(m.group(1))
-                if isinstance(parsed, list):
-                    details = parsed
-                    break
-            except Exception:
-                continue
+        json_start = -1
+        json_end = -1
 
-        # 兜底: 尝试从纯 JSON 数组中提取
-        if details is None:
-            for m in reversed(list(re.finditer(r'\[[\s\S]*?\]', text))):
-                try:
-                    parsed = json.loads(m.group(0))
-                    if isinstance(parsed, list) and parsed and "question_no" in str(parsed):
-                        details = parsed
-                        break
-                except Exception:
-                    continue
+        # 策略：从文本末尾向前找 [{"question_no" 标记，括号配对解析 JSON
+        tag = '[{"question_no"'
+        tag_pos = text.rfind(tag)
+        if tag_pos >= 0:
+            start = text.rfind('[', 0, tag_pos + 1)
+            if start >= 0:
+                depth = 0
+                for i in range(start, len(text)):
+                    ch = text[i]
+                    if ch == '[':
+                        depth += 1
+                    elif ch == ']':
+                        depth -= 1
+                        if depth == 0:
+                            try:
+                                parsed = json.loads(text[start:i + 1])
+                                if isinstance(parsed, list):
+                                    details = parsed
+                                    json_start = start
+                                    json_end = i + 1
+                            except Exception:
+                                pass
+                            break
 
-        # 无论如何，清除所有 ``` 代码块
+        # 清除所有 ``` 代码块
         cleaned = re.sub(r'```[\s\S]*?```', '', text)
-        # 也清除可能残留的孤立 ``` 标记
         cleaned = re.sub(r'```', '', cleaned)
-        # 压缩多余空行（连续 3 个以上空行 → 2 个空行）
+        # 切除已提取的 JSON 片段
+        if json_start >= 0:
+            cleaned = (cleaned[:json_start] + cleaned[json_end:])
         cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
         return cleaned.strip(), details
 

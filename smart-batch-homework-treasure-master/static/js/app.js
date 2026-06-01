@@ -370,6 +370,8 @@ const app = createApp({
                                     correctionResult.value += `### ${data.section || ''}\n- **得分**: ${data.score || '-'}\n- **详情**: ${data.detail || ''}\n\n`;
                                 } else if (data.event === 'summary') {
                                     correctionResult.value += `\n\n---\n\n## 总结\n\n${data.message || ''}`;
+                                } else if (data.event === 'final_text') {
+                                    correctionResult.value = data.text;
                                 } else if (data.event === 'end') {
                                     showMessage('批改完成', 'success');
                                     await fetchHistory();

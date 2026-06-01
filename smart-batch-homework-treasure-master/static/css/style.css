@@ -542,17 +542,18 @@ body {
 }
 
 .markdown-body pre {
-    background: #1e1e1e;
-    color: #d4d4d4;
+    background: #faf8f5;
+    color: var(--text-regular);
     padding: 16px;
     border-radius: 6px;
     overflow-x: auto;
     margin-bottom: 16px;
+    border: 1px solid var(--border-color);
 }
 
 .markdown-body pre code {
     background: transparent;
-    color: inherit;
+    color: #b85c3a;
     padding: 0;
 }
 
