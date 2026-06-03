@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
 
 # 加载 .env 文件
@@ -7,10 +8,10 @@ _dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_dotenv_path)
 
 class Config:
-    # 阿里云百炼 API 配置（优先使用环境变量，否则使用硬编码值）
+    # LLM API 配置（通过 .env 设置）
     MODEL_API_KEY = os.getenv("MODEL_API_KEY", "")
-    MODEL_NAME = os.getenv("MODEL_NAME", "qwen-vl-max")
-    MODEL_BASE_URL = os.getenv("MODEL_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    MODEL_NAME = os.getenv("MODEL_NAME", "")
+    MODEL_BASE_URL = os.getenv("MODEL_BASE_URL", "")
 
     # 应用配置
     HOST = os.getenv("HOST", "127.0.0.1")
@@ -27,7 +28,7 @@ class Config:
     @classmethod
     def database_url(cls) -> str:
         return (
-            f"mysql+aiomysql://{cls.MYSQL_USER}:{cls.MYSQL_PASSWORD}"
+            f"mysql+aiomysql://{quote_plus(cls.MYSQL_USER)}:{quote_plus(cls.MYSQL_PASSWORD)}"
             f"@{cls.MYSQL_HOST}:{cls.MYSQL_PORT}/{cls.MYSQL_DATABASE}"
             f"?charset=utf8mb4"
         )
@@ -39,10 +40,6 @@ class Config:
     UPLOAD_DIR = "uploads"
     MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
     ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
-
-    # 性能优化配置
-    MODEL_MAX_TOKENS = int(os.getenv("MODEL_MAX_TOKENS", "2048"))  # 限制输出长度
-    MODEL_STREAMING = os.getenv("MODEL_STREAMING", "True").lower() == "true"  # 启用流式输出
 
 config = Config()
 

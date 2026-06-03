@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from src.config import config
 from src.services.image_service import image_to_base64, get_image_media_type
-from src.services.ocr_service import ocr_image, ocr_images, ocr_available
+from src.services.ocr_service import ocr_image, ocr_available
 
 logger = logging.getLogger(__name__)
 

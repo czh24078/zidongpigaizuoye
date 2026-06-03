@@ -1,29 +1,4 @@
 import base64
-import os
-import uuid
-
-from src.config import config
-
-
-def validate_image(filename: str, file_size: int) -> bool:
-    """校验图片格式和大小"""
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if ext not in config.ALLOWED_EXTENSIONS:
-        return False
-    if file_size > config.MAX_FILE_SIZE:
-        return False
-    return True
-
-
-def save_image(content: bytes, filename: str) -> str:
-    """保存图片到uploads目录，返回保存路径"""
-    os.makedirs(config.UPLOAD_DIR, exist_ok=True)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    saved_name = f"{uuid.uuid4().hex}.{ext}"
-    path = os.path.join(config.UPLOAD_DIR, saved_name)
-    with open(path, "wb") as f:
-        f.write(content)
-    return path
 
 
 def image_to_base64(content: bytes) -> str:

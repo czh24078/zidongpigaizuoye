@@ -6,8 +6,6 @@ RapidOCR 使用 PaddleOCR 的模型权重但通过 ONNX Runtime 推理，
 """
 
 import logging
-from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -54,20 +52,6 @@ def ocr_image(image_path: str) -> str:
     text = "\n".join(lines)
     logger.info(f"OCR 识别完成: {image_path} -> {len(lines)} 行文字")
     return text
-
-
-def ocr_images(image_paths: List[str]) -> List[str]:
-    """
-    批量 OCR 多张图片。
-
-    Args:
-        image_paths: 图片路径列表
-
-    Returns:
-        每张图片对应的 OCR 文字列表
-    """
-    return [ocr_image(p) for p in image_paths]
-
 
 def ocr_available() -> bool:
     """检测 OCR 引擎是否可用。"""
