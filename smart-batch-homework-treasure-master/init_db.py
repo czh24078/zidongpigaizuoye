@@ -15,6 +15,9 @@ import argparse
 import os
 import sys
 
+from dotenv import load_dotenv
+load_dotenv()
+
 try:
     import pymysql
 except ImportError:

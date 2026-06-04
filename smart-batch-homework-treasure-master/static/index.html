@@ -358,83 +358,76 @@
                 </el-card>
             </div>
 
-            <!-- 训练页面 -->
+            <!-- 试卷生成页面 -->
             <div v-if="activeNav === 'training'">
-                <!-- 未开始训练 -->
-                <el-card v-if="!trainingActive" shadow="hover">
+                <!-- 未生成试卷 -->
+                <el-card v-if="examPaperQuestions.length === 0" shadow="hover">
                     <template #header>
                         <div class="card-header">
                             <el-icon><trophy /></el-icon>
-                            <span>随机训练</span>
+                            <span>试卷生成</span>
                         </div>
                     </template>
                     <div v-if="questionBank.length === 0" class="empty-history">
-                        <el-empty description="题库为空，请先从“历史题目”中添加题目到题库" />
+                        <el-empty description="题库为空，请先从“历史题目”或“AI出题”中添加题目到题库" />
                     </div>
-                    <div v-else class="training-start-area">
-                        <div class="training-start-info">
-                            <p>题库中共有 <strong>{{ questionBank.length }}</strong> 道题目，将乱序出题。</p>
-                            <el-form-item label="出题数量" style="margin-top:16px;">
-                                <el-input-number v-model="trainingCount" :min="1" :max="questionBank.length" size="default" />
+                    <div v-else class="exam-paper-start">
+                        <p>题库中共有 <strong>{{ questionBank.length }}</strong> 道题，将乱序抽题组卷。</p>
+                        <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
+                            <el-form-item label="科目">
+                                <el-select v-model="examPaperSubject" style="width:140px;">
+                                    <el-option label="不限" value="不限"></el-option>
+                                    <el-option label="语文" value="语文"></el-option>
+                                    <el-option label="数学" value="数学"></el-option>
+                                    <el-option label="物理" value="物理"></el-option>
+                                </el-select>
+                            </el-form-item>
+                            <el-form-item label="题目数量">
+                                <el-input-number v-model="examPaperCount" :min="1" :max="questionBank.length" size="default" />
                             </el-form-item>
                         </div>
-                        <el-button type="primary" size="large" @click="startTraining" style="margin-top:20px;">
-                            <el-icon><video-play /></el-icon>开始训练
+                        <el-button type="primary" size="large" @click="generateExamPaper" style="margin-top:20px;">
+                            <el-icon><edit-pen /></el-icon>生成试卷
                         </el-button>
                     </div>
                 </el-card>
 
-                <!-- 训练进行中 -->
-                <template v-if="trainingActive">
+                <!-- 已生成试卷 -->
+                <template v-if="examPaperQuestions.length > 0">
                     <el-card shadow="hover" style="margin-bottom:16px;">
                         <template #header>
                             <div class="card-header">
                                 <el-icon><trophy /></el-icon>
-                                <span>随机训练</span>
-                                <el-tag size="small" effect="dark" type="warning" style="margin-left:8px;">{{ trainingQuestions.length }} 题</el-tag>
-                                <el-tag v-if="trainingChecked" size="small" effect="dark" type="success" style="margin-left:8px;">
-                                    得分：{{ trainingScore }} / {{ trainingQuestions.length }}
-                                </el-tag>
-                                <el-button type="danger" text size="small" @click="endTraining" style="margin-left:auto;">
-                                    <el-icon><close /></el-icon>结束训练
-                                </el-button>
+                                <span>练习试卷</span>
+                                <el-tag size="small" effect="dark" type="warning" style="margin-left:8px;">{{ examPaperQuestions.length }} 题</el-tag>
                             </div>
                         </template>
                     </el-card>
 
-                    <div class="training-questions-list">
-                        <el-card v-for="(q, idx) in trainingQuestions" :key="idx" shadow="hover" class="training-question-card"
-                                 :class="{ 'is-correct': trainingChecked && q._isCorrect, 'is-wrong': trainingChecked && !q._isCorrect }">
-                            <div class="training-question-header">
-                                <span class="training-question-no">{{ idx + 1 }}</span>
-                                <span class="training-question-text">{{ q.question_text }}</span>
+                    <div class="exam-paper-questions-list">
+                        <el-card v-for="(q, idx) in examPaperQuestions" :key="idx" shadow="hover" class="exam-paper-question-card">
+                            <div class="exam-paper-question-header">
+                                <span class="exam-paper-question-no">{{ idx + 1 }}</span>
+                                <span class="exam-paper-question-text">{{ q.question_text }}</span>
                             </div>
-                            <div class="training-answer-area">
-                                <el-input v-model="q._userAnswer" :placeholder="trainingChecked ? '' : '请输入你的答案'"
-                                          :disabled="trainingChecked" size="default" />
+                            <div class="exam-paper-question-answer">
+                                <strong>答案：</strong>{{ q.standard_answer }}
                             </div>
-                            <div v-if="trainingChecked" class="training-result-area">
-                                <div class="training-result-row">
-                                    <el-tag :type="q._isCorrect ? 'success' : 'danger'" size="small" effect="dark">
-                                        {{ q._isCorrect ? '✓ 正确' : '✗ 错误' }}
-                                    </el-tag>
-                                    <span class="training-correct-answer">正确答案：<strong>{{ q.standard_answer }}</strong></span>
-                                </div>
-                                <div v-if="q.analysis" class="training-analysis">
-                                    <el-icon><info-filled /></el-icon> {{ q.analysis }}
-                                </div>
+                            <div v-if="q.analysis" class="exam-paper-question-analysis">
+                                <strong>解析：</strong>{{ q.analysis }}
                             </div>
                         </el-card>
                     </div>
 
-                    <div class="training-actions" v-if="!trainingChecked">
-                        <el-button type="success" size="large" @click="checkTrainingAnswers">
-                            <el-icon><circle-check /></el-icon>对答案
+                    <div class="exam-paper-actions">
+                        <el-button type="success" size="large" @click="downloadExamPaper">
+                            <el-icon><download /></el-icon>导出 Word
                         </el-button>
-                    </div>
-                    <div class="training-actions" v-else>
-                        <el-button type="primary" size="large" @click="startTraining">
-                            <el-icon><refresh /></el-icon>再来一组
+                        <el-button type="default" size="large" @click="generateExamPaper">
+                            <el-icon><refresh /></el-icon>重新生成
+                        </el-button>
+                        <el-button type="danger" size="large" @click="clearExamPaper">
+                            <el-icon><close /></el-icon>清空
                         </el-button>
                     </div>
                 </template>
@@ -492,9 +485,19 @@
                         </el-row>
                         <el-row>
                             <el-col :span="24" style="text-align:center;padding-top:12px;">
-                                <el-button type="primary" size="large" :loading="isGenerating" @click="generateQuestions" style="min-width:180px;">
-                                    <el-icon :size="20"><edit-pen /></el-icon> 生成题目
-                                </el-button>
+                                <div class="ai-generate-buttons">
+                                    <el-button type="primary" size="large"
+                                        :disabled="isGenerating"
+                                        :loading="isGenerating"
+                                        @click="generateQuestions">
+                                        <el-icon><edit-pen /></el-icon> 生成题目
+                                    </el-button>
+                                    <el-button type="danger" size="large"
+                                        :disabled="!isGenerating"
+                                        @click="cancelGeneration">
+                                        <el-icon><close /></el-icon> 终止生成
+                                    </el-button>
+                                </div>
                             </el-col>
                         </el-row>
                     </el-form>
@@ -518,8 +521,10 @@
                             <strong>解析：</strong>{{ q.analysis }}
                         </div>
                         <div class="ai-question-footer">
-                            <el-button type="success" size="small" @click="addGeneratedToBank(q)">
-                                <el-icon><plus /></el-icon> 加入题库
+                            <el-button type="primary" size="small" text
+                                @click="addGeneratedToBank(q)"
+                                :disabled="isGeneratedAdded(q)">
+                                {{ isGeneratedAdded(q) ? '已加入' : '加入题库' }}
                             </el-button>
                         </div>
                     </el-card>
@@ -612,6 +617,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=21"></script>
+    <script src="/static/js/app.js?v=25"></script>
 </body>
 </html>

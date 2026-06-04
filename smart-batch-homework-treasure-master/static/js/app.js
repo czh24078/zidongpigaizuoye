@@ -45,12 +45,10 @@ const app = createApp({
             } catch { questionBank.value = []; }
         }
 
-        // 训练状态
-        const trainingActive = ref(false);
-        const trainingCount = ref(5);
-        const trainingQuestions = ref([]);
-        const trainingChecked = ref(false);
-        const trainingScore = ref(0);
+        // 试卷生成状态
+        const examPaperSubject = ref('不限');
+        const examPaperCount = ref(5);
+        const examPaperQuestions = ref([]);
 
         // AI 服务状态
         const aiAvailable = ref(true);
@@ -59,6 +57,8 @@ const app = createApp({
         const aiGeneratedQuestions = ref([]);
         const aiForm = reactive({ subject: '语文', grade: '初中', difficulty: '中等', count: 5, requirement: '' });
         const isGenerating = ref(false);
+        let abortController = null;
+        const addedGeneratedKeys = reactive(new Set());
 
         // 将所有试卷的题目展平为单题列表
         const allQuestions = computed(() => {
@@ -630,7 +630,7 @@ const app = createApp({
             }).catch(() => {});
         }
 
-        // ==================== 训练 ====================
+        // ==================== 试卷生成 ====================
 
         function shuffleArray(arr) {
             const a = [...arr];
@@ -641,40 +641,75 @@ const app = createApp({
             return a;
         }
 
-        function startTraining() {
+        function getQuestionSubject(q) {
+            const filename = (q.exam_filename || '').toLowerCase();
+            const text = (q.question_text || '').toLowerCase();
+            if (filename.includes('语文')) return '语文';
+            if (filename.includes('数学')) return '数学';
+            if (filename.includes('物理')) return '物理';
+            const cn = ['语文', '古诗', '文言', '阅读', '成语', '拼音', '汉字', '修辞', '病句', '句式', '标点', '词语', '诗歌', '古文', '赏析', '翻译', '解释加点', '默写', '对联', '近义词', '反义词', '造句', '缩句', '扩句'];
+            const ma = ['数学', '方程', '几何', '函数', '概率', '统计', '三角', '代数', '数列', '不等式', '整除', '余数', '质数', '合数', '约分', '通分'];
+            const ph = ['物理', '力', '速度', '加速度', '压强', '浮力', '电路', '电压', '电流', '电阻', '磁场', '电场', '光学', '热学', '功', '功率', '能量', '牛顿', '焦耳', '欧姆', '串联', '并联', '折射', '反射', '密度', '重力', '摩擦力', '弹性', '波长', '频率'];
+            let cnScore = 0, maScore = 0, phScore = 0;
+            for (const kw of cn) { if (text.includes(kw)) cnScore++; }
+            for (const kw of ma) { if (text.includes(kw)) maScore++; }
+            for (const kw of ph) { if (text.includes(kw)) phScore++; }
+            const max = Math.max(cnScore, maScore, phScore);
+            if (max === 0) return '其他';
+            if (cnScore === max) return '语文';
+            if (maScore === max) return '数学';
+            return '物理';
+        }
+
+        function generateExamPaper() {
             if (questionBank.value.length === 0) {
-                showMessage('题库为空，无法开始训练', 'warning');
+                showMessage('题库为空，无法生成试卷', 'warning');
                 return;
             }
-            const count = Math.min(trainingCount.value, questionBank.value.length);
-            const shuffled = shuffleArray(questionBank.value).slice(0, count);
-            trainingQuestions.value = shuffled.map(q => ({
-                ...q,
-                _userAnswer: '',
-                _isCorrect: false
-            }));
-            trainingChecked.value = false;
-            trainingScore.value = 0;
-            trainingActive.value = true;
-        }
-
-        function checkTrainingAnswers() {
-            let score = 0;
-            for (const q of trainingQuestions.value) {
-                const userAns = (q._userAnswer || '').trim().toLowerCase();
-                const correctAns = (q.standard_answer || '').trim().toLowerCase();
-                q._isCorrect = userAns === correctAns;
-                if (q._isCorrect) score++;
+            let pool = questionBank.value;
+            if (examPaperSubject.value !== '不限') {
+                pool = pool.filter(q => getQuestionSubject(q) === examPaperSubject.value);
+                if (pool.length === 0) {
+                    showMessage(`题库中没有"${examPaperSubject.value}"科目的题目`, 'warning');
+                    return;
+                }
             }
-            trainingScore.value = score;
-            trainingChecked.value = true;
-            showMessage(`得分：${score} / ${trainingQuestions.value.length}`, score === trainingQuestions.value.length ? 'success' : 'warning');
+            const count = Math.min(examPaperCount.value, pool.length);
+            examPaperQuestions.value = shuffleArray(pool).slice(0, count);
         }
 
-        function endTraining() {
-            trainingActive.value = false;
-            trainingQuestions.value = [];
-            trainingChecked.value = false;
+        function clearExamPaper() {
+            examPaperQuestions.value = [];
+        }
+
+        async function downloadExamPaper() {
+            if (examPaperQuestions.value.length === 0) return;
+            try {
+                const payload = examPaperQuestions.value.map(q => ({
+                    question_no: q.question_no,
+                    question_text: q.question_text,
+                    standard_answer: q.standard_answer,
+                    analysis: q.analysis || ''
+                }));
+                const resp = await axios.post('/api/exam-paper/export', payload, {
+                    responseType: 'blob'
+                });
+                const blob = new Blob([resp.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const now = new Date();
+                const ts = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') + '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(now.getSeconds()).padStart(2,'0');
+                a.download = `练习试卷_${ts}.docx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showMessage('试卷已下载', 'success');
+            } catch (error) {
+                console.error('导出试卷失败:', error);
+                showMessage('导出试卷失败', 'error');
+            }
         }
 
         // ==================== AI 出题 ====================
@@ -683,6 +718,8 @@ const app = createApp({
             if (isGenerating.value) return;
             isGenerating.value = true;
             aiGeneratedQuestions.value = [];
+            addedGeneratedKeys.clear();
+            abortController = new AbortController();
             try {
                 const resp = await axios.post('/api/ai-generate', {
                     subject: aiForm.subject,
@@ -691,21 +728,39 @@ const app = createApp({
                     difficulty: aiForm.difficulty,
                     count: aiForm.count,
                     requirement: aiForm.requirement || null
-                }, { timeout: 180000 });
+                }, {
+                    timeout: 180000,
+                    signal: abortController.signal
+                });
                 if (resp.data && Array.isArray(resp.data.questions)) {
                     aiGeneratedQuestions.value = resp.data.questions;
                     showMessage(`成功生成 ${resp.data.questions.length} 道题目`, 'success');
                 }
             } catch (error) {
+                if (error.name === 'CanceledError' || error.code === 'ERR_CANCELED') return;
                 console.error('AI出题失败:', error);
                 const msg = error.response?.data?.detail || error.message || '出题失败';
                 showMessage(msg, 'error');
             } finally {
                 isGenerating.value = false;
+                abortController = null;
             }
         }
 
+        function cancelGeneration() {
+            if (abortController) {
+                abortController.abort();
+                isGenerating.value = false;
+                showMessage('已终止生成', 'warning');
+            }
+        }
+
+        function isGeneratedAdded(q) {
+            return addedGeneratedKeys.has(q.question_no + '::' + q.question_text);
+        }
+
         async function addGeneratedToBank(q) {
+            if (isGeneratedAdded(q)) return;
             try {
                 await axios.post('/api/question-bank', {
                     exam_id: null,
@@ -715,11 +770,13 @@ const app = createApp({
                     analysis: q.analysis,
                     exam_filename: 'AI生成题目'
                 });
+                addedGeneratedKeys.add(q.question_no + '::' + q.question_text);
                 await fetchQuestionBank();
                 showMessage('已加入题库', 'success');
             } catch (e) {
                 const msg = e.response?.data?.detail || e.message;
                 if (e.response?.status === 409) {
+                    addedGeneratedKeys.add(q.question_no + '::' + q.question_text);
                     showMessage('该题目已在题库中', 'warning');
                 } else {
                     showMessage('添加失败: ' + msg, 'error');
@@ -883,12 +940,10 @@ const app = createApp({
             bankQuestionNo,
             bankKeyword,
 
-            // 训练状态
-            trainingActive,
-            trainingCount,
-            trainingQuestions,
-            trainingChecked,
-            trainingScore,
+            // 试卷生成状态
+            examPaperSubject,
+            examPaperCount,
+            examPaperQuestions,
 
             // AI 服务状态
             aiAvailable,
@@ -924,13 +979,15 @@ const app = createApp({
             clearBank,
             fetchQuestionBank,
 
-            // 训练方法
-            startTraining,
-            checkTrainingAnswers,
-            endTraining,
+            // 试卷生成方法
+            generateExamPaper,
+            clearExamPaper,
+            downloadExamPaper,
 
             // AI 出题方法
             generateQuestions,
+            cancelGeneration,
+            isGeneratedAdded,
             addGeneratedToBank,
 
             // 试题相关方法

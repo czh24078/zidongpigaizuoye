@@ -636,6 +636,50 @@ async def download_record(correction_id: str):
 
 
 # =====================================================================
+# 试卷导出
+# =====================================================================
+
+@router.post("/exam-paper/export")
+async def export_exam_paper(payload: list[dict]):
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+    style = doc.styles["Normal"]
+    style.font.size = Pt(11)
+
+    doc.add_heading("练习试卷", level=1)
+    p = doc.add_paragraph()
+    p.add_run(f"共 {len(payload)} 题").bold = True
+
+    # 题目部分
+    for i, q in enumerate(payload, start=1):
+        doc.add_heading(f"第 {i} 题", level=3)
+        doc.add_paragraph(q.get("question_text", ""))
+
+    # 答案部分
+    doc.add_paragraph("—" * 30)
+    doc.add_heading("参考答案", level=2)
+    for i, q in enumerate(payload, start=1):
+        doc.add_heading(f"第 {i} 题", level=3)
+        p = doc.add_paragraph()
+        p.add_run("答案：").bold = True
+        p.add_run(q.get("standard_answer", ""))
+        analysis = q.get("analysis", "")
+        if analysis:
+            p2 = doc.add_paragraph()
+            p2.add_run("解析：").bold = True
+            p2.add_run(analysis)
+
+    path = RECORDS_DIR / f"exam_paper_{uuid.uuid4().hex[:8]}.docx"
+    doc.save(str(path))
+    return FileResponse(
+        path, filename=f"练习试卷_{datetime.now().strftime('%Y%m%d_%H%M%S')}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+# =====================================================================
 # 题库接口
 # =====================================================================
 
