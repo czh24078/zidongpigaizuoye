@@ -134,6 +134,11 @@ const app = createApp({
             return list;
         });
 
+        const examPaperAvailableCount = computed(() => {
+            if (examPaperSubject.value === '不限') return questionBank.value.length;
+            return questionBank.value.filter(q => q.subject === examPaperSubject.value).length;
+        });
+
         // ==================== 工具方法 ====================
 
         /**
@@ -597,7 +602,7 @@ const app = createApp({
                     standard_answer: q.standard_answer,
                     analysis: q.analysis,
                     exam_filename: q.examFilename,
-                    subject: q.subject || getQuestionSubject(q)
+                    subject: q.subject || '其他'
                 });
                 await fetchQuestionBank();
                 showMessage('已加入题库', 'success');
@@ -642,26 +647,6 @@ const app = createApp({
                 [a[i], a[j]] = [a[j], a[i]];
             }
             return a;
-        }
-
-        function getQuestionSubject(q) {
-            const filename = (q.exam_filename || '').toLowerCase();
-            const text = (q.question_text || '').toLowerCase();
-            if (filename.includes('语文')) return '语文';
-            if (filename.includes('数学')) return '数学';
-            if (filename.includes('物理')) return '物理';
-            const cn = ['语文', '古诗', '文言', '阅读', '成语', '拼音', '汉字', '修辞', '病句', '句式', '标点', '词语', '诗歌', '古文', '赏析', '翻译', '解释加点', '默写', '对联', '近义词', '反义词', '造句', '缩句', '扩句'];
-            const ma = ['数学', '方程', '几何', '函数', '概率', '统计', '三角', '代数', '数列', '不等式', '整除', '余数', '质数', '合数', '约分', '通分'];
-            const ph = ['物理', '力', '速度', '加速度', '压强', '浮力', '电路', '电压', '电流', '电阻', '磁场', '电场', '光学', '热学', '功', '功率', '能量', '牛顿', '焦耳', '欧姆', '串联', '并联', '折射', '反射', '密度', '重力', '摩擦力', '弹性', '波长', '频率'];
-            let cnScore = 0, maScore = 0, phScore = 0;
-            for (const kw of cn) { if (text.includes(kw)) cnScore++; }
-            for (const kw of ma) { if (text.includes(kw)) maScore++; }
-            for (const kw of ph) { if (text.includes(kw)) phScore++; }
-            const max = Math.max(cnScore, maScore, phScore);
-            if (max === 0) return '其他';
-            if (cnScore === max) return '语文';
-            if (maScore === max) return '数学';
-            return '物理';
         }
 
         function generateExamPaper() {
@@ -948,6 +933,7 @@ const app = createApp({
             examPaperSubject,
             examPaperCount,
             examPaperQuestions,
+            examPaperAvailableCount,
 
             // AI 服务状态
             aiAvailable,

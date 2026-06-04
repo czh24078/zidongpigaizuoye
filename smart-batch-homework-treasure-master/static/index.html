@@ -372,10 +372,10 @@
                         <el-empty description="题库为空，请先从“历史题目”或“AI出题”中添加题目到题库" />
                     </div>
                     <div v-else class="exam-paper-start">
-                        <p>题库中共有 <strong>{{ questionBank.length }}</strong> 道题，将乱序抽题组卷。</p>
+                        <p>题库共 <strong>{{ questionBank.length }}</strong> 题<span v-if="examPaperSubject !== '不限'">，{{ examPaperSubject }}可用 <strong>{{ examPaperAvailableCount }}</strong> 题</span></p>
                         <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
                             <el-form-item label="科目">
-                                <el-select v-model="examPaperSubject" style="width:140px;">
+                                <el-select v-model="examPaperSubject" style="width:140px;" @change="examPaperCount = examPaperAvailableCount > 0 ? Math.min(examPaperCount, examPaperAvailableCount) : examPaperCount">
                                     <el-option label="不限" value="不限"></el-option>
                                     <el-option label="语文" value="语文"></el-option>
                                     <el-option label="数学" value="数学"></el-option>
@@ -385,10 +385,11 @@
                                 </el-select>
                             </el-form-item>
                             <el-form-item label="题目数量">
-                                <el-input-number v-model="examPaperCount" :min="1" :max="questionBank.length" size="default" />
+                                <el-input-number v-model="examPaperCount" :min="1" :max="examPaperAvailableCount" :disabled="examPaperAvailableCount === 0" size="default" />
                             </el-form-item>
                         </div>
-                        <el-button type="primary" size="large" @click="generateExamPaper" style="margin-top:20px;">
+                        <p v-if="examPaperSubject !== '不限' && examPaperAvailableCount === 0" style="color:#f56c6c;margin-top:8px;">该科目暂无可用题目</p>
+                        <el-button type="primary" size="large" @click="generateExamPaper" style="margin-top:20px;" :disabled="examPaperAvailableCount === 0">
                             <el-icon><edit-pen /></el-icon>生成试卷
                         </el-button>
                     </div>
@@ -621,6 +622,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=26"></script>
+    <script src="/static/js/app.js?v=27"></script>
 </body>
 </html>

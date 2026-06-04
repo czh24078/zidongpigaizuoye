@@ -150,27 +150,13 @@ async def _auto_add_to_bank(session: AsyncSession, exam_id: Optional[str], quest
     return added
 
 
-SUBJECT_KEYWORDS = {
-    "语文": ["语文", "古诗", "文言", "阅读", "成语", "拼音", "汉字", "修辞", "病句", "句式", "标点", "词语", "诗歌", "古文", "赏析", "翻译", "解释加点", "默写", "对联", "近义词", "反义词", "造句", "缩句", "扩句"],
-    "数学": ["数学", "方程", "几何", "函数", "概率", "统计", "三角", "代数", "数列", "不等式", "整除", "余数", "质数", "合数", "约分", "通分"],
-    "物理": ["物理", "力", "速度", "加速度", "压强", "浮力", "电路", "电压", "电流", "电阻", "磁场", "电场", "光学", "热学", "功", "功率", "能量", "牛顿", "焦耳", "欧姆", "串联", "并联", "折射", "反射", "密度", "重力", "摩擦力", "弹性", "波长", "频率"],
-}
-
-
 def _guess_subject(filename: str, question_text: str) -> str:
-    """根据文件名和题干关键词猜测科目。"""
+    """根据文件名猜测科目，无法判断时返回'其他'。"""
     fn = filename.lower()
     for subj in ["语文", "数学", "物理", "历史"]:
         if subj in fn:
             return subj
-    text = question_text.lower()
-    scores = {subj: 0 for subj in SUBJECT_KEYWORDS}
-    for subj, keywords in SUBJECT_KEYWORDS.items():
-        for kw in keywords:
-            if kw in text:
-                scores[subj] += 1
-    best = max(scores, key=scores.get)
-    return best if scores[best] > 0 else "其他"
+    return "其他"
 
 
 def _save_record_docx(
