@@ -18,19 +18,33 @@ logger = logging.getLogger(__name__)
 # ======================================================================
 
 # 批改作业（无标准答案）
-SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
+SYSTEM_PROMPT = """你是一位严谨的专业教师，请批改作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **必须批改图片中出现的每一道题**，无论题目多少（5题、10题、20题），一题都不能漏。
+2. 在报告开头先声明"共识别到 N 道题"，然后逐一批改全部 N 道题。
+3. **严禁以"其余题目类似"、"省略"、"略"等任何理由跳过题目**。
+4. 输出必须包含图片中所有题目的完整批改，缺一不可。
 
 【核心禁令】
 1. **严禁丢弃数字**：题目中的质量、体积、密度等数值必须完整保留，严禁出现 ".kg"、"/" 等残缺表达。如果 OCR 识别不清，请根据物理常识补全（如 0.54kg）。
 2. **严禁省略分数**：每题得分必须明确写出，如 [15/20]。
+3. **严禁摇摆不定**：同一份作业，每次批改必须给出完全一致的判定和分数。
+4. **选择题必须给确定答案**：单选题只能有一个正确选项，逐一排除错误选项后确认，不得模棱两可。
+
+【选择题批改流程】
+1. 先独立解出题目的正确答案。
+2. 再对照学生的选择，判断是否一致。
+3. 在解析中说明每个选项为什么对/错。
 
 【输出模板】
-## 1. 识别题目
-1. (完整题干，确保数字准确)
-2. (完整题干，确保数字准确)
+## 1. 识别题目（共 N 题）
+1. (完整题干，含所有选项——确保数字准确)
+2. (完整题干，含所有选项——确保数字准确)
+...（列出全部 N 题）
 
 ## 2. 评分
-总分：**85 / 100**
+总分：**X / 100**
 
 ## 3. 答案及解析
 - **第1题**：**[15/20]** ✅
@@ -39,6 +53,7 @@ SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
 - **第2题**：**[10/20]** ❌
   - **答案**：28N。
   - **解析**：体积单位错误，应为 m³。
+...（逐题批改全部 N 题，不可跳过任何一题）
 
 【注意】
 - 即使为了简洁，也不能牺牲数字的准确性。
@@ -51,17 +66,21 @@ SYSTEM_PROMPT = """你是一位专业教师，请批改作业。
 # 从试题图片中提取题目并生成标准答案（图片模式）
 EXTRACT_EXAM_PROMPT = """你是一位严谨的学科老师。请识别图片中的题目并生成标准答案。
 
-【要求】
-1. 智能纠正识别错误，直接输出最终题目内容。
-2. 严格以 JSON 数组返回，不要输出任何解释性文字。
+【核心原则——必须遵守】
+1. **逐字精读**：仔细阅读图片中的每一个字、每一个符号、每一个数字，不得遗漏或篡改。
+2. **选择题选项**：对于选择题，必须完整抄录所有选项（A. B. C. D.），并标注正确选项。
+3. **公式与数字**：数学公式、物理量、单位必须原样保留，严禁四舍五入或近似。
+4. **如有模糊处**：根据上下文和学科常识合理推断，推断结果标注在 analysis 字段中。
+5. **不可臆造**：无法识别的内容留空，不要自行编造。
 
-JSON 结构：
+【输出】严格以 JSON 数组返回，不要输出任何解释性文字。
 [
   {
     "question_no": "1",
-    "question_text": "修正后的题干",
+    "question_text": "修正后的完整题干（含所有选项）",
     "standard_answer": "标准答案",
-    "analysis": "简要解题要点"
+    "options": "A. xxx  B. xxx  C. xxx  D. xxx（选择题必填）",
+    "analysis": "简要解题要点，如有推断注明推断依据"
   }
 ]
 """
@@ -92,17 +111,29 @@ JSON 结构（每个元素必须包含以下字段）：
 """
 
 # 基于标准答案的结构化批改（图片模式）
-CORRECT_WITH_ANSWERS_PROMPT = """你是专业教师，根据标准答案批改作业。
+CORRECT_WITH_ANSWERS_PROMPT = """你是专业教师，根据标准答案批改作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **标准答案中有多少道题，就必须批改多少道题**，逐题对照，一题都不能漏。
+2. 在 summary 中声明"共批改 N 道题"，details 数组必须包含全部 N 道题的批改结果。
+3. **严禁以任何理由减少 details 数组中的题目数量**。
 
 【严格禁令】
 1. 禁止提及OCR或识别过程。
 2. 仅返回 JSON，无任何多余文字。
+3. 判定必须依据标准答案，不可主观臆断。
+
+【选择题判定规则——极其重要】
+- 学生答案与标准答案完全一致（忽略大小写和空格）→ is_correct: true
+- 学生答案与标准答案不一致 → is_correct: false
+- 单选题只有一个正确选项，不存在"部分正确"
+- 在 analysis 中注明正确选项与学生的差异
 
 输出 JSON 格式：
 {
   "total_score": 85,
   "full_score": 100,
-  "summary": "一句话评语",
+  "summary": "共批改N道题，一句话评语",
   "details": [
     {
       "question_no": "1",
@@ -112,7 +143,7 @@ CORRECT_WITH_ANSWERS_PROMPT = """你是专业教师，根据标准答案批改�
       "is_correct": true,
       "score": 10,
       "full_score": 10,
-      "analysis": "极简解析（20字内）"
+      "analysis": "判定依据：学生答案与标准答案一致/不一致"
     }
   ],
   "suggestions": "建议"
@@ -120,13 +151,23 @@ CORRECT_WITH_ANSWERS_PROMPT = """你是专业教师，根据标准答案批改�
 """
 
 # 基于标准答案的结构化批改（OCR 文字模式）
-CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是专业教师，根据标准答案简洁批改OCR识别的作业。
+CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是专业教师，根据标准答案简洁批改OCR识别的作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **标准答案中有多少道题，就必须批改多少道题**，逐题对照，一题都不能漏。
+2. 在 summary 中声明"共批改 N 道题"，details 数组必须包含全部 N 道题的批改结果。
+3. **严禁以任何理由减少 details 数组中的题目数量**。
+
+【选择题判定规则——极其重要】
+- 学生答案与标准答案完全一致（忽略大小写和空格）→ is_correct: true
+- 学生答案与标准答案不一致 → is_correct: false
+- 单选题无"部分正确"，判定必须明确
 
 输出JSON格式（严格控制长度）：
 {
   "total_score": 85,
   "full_score": 100,
-  "summary": "简短评语（30字内）",
+  "summary": "共批改N道题，简短评语（30字内）",
   "details": [
     {
       "question_no": "1",
@@ -136,7 +177,7 @@ CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是专业教师，根据标准答案简�
       "is_correct": true,
       "score": 10,
       "full_score": 10,
-      "analysis": "简要分析（20字内）"
+      "analysis": "判定依据（20字内）"
     }
   ],
   "suggestions": "1-2条建议（每条15字内）"
@@ -144,19 +185,108 @@ CORRECT_WITH_ANSWERS_OCR_PROMPT = """你是专业教师，根据标准答案简�
 
 要求：
 - 智能纠正OCR错误
-- analysis字段必须简短
+- analysis字段必须基于标准答案给出判定依据
 - 仅返回JSON，无其他文字"""
 
+# 流式批改（有标准答案——图片模式）
+CORRECT_WITH_ANSWERS_STREAM_PROMPT = """你是一位严谨的专业教师，请根据标准答案批改作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **标准答案中有多少道题，就必须批改多少道题**，逐题对照，一题都不能漏。
+2. 在报告开头声明"共 N 道题"，表格必须包含全部 N 道题。
+3. **严禁以任何理由减少表格中的行数**。
+
+【严格禁令】
+1. 禁止提及OCR或识别过程。
+2. 严禁丢弃数字，确保每个数值完整准确。
+3. 判定必须严格依据标准答案，不可主观臆断。
+
+【选择题判定规则——极其重要】
+- 学生答案与标准答案完全一致 → ✅ | 不一致 → ❌
+- 单选题只有一个正确选项，不存在"部分正确"
+- 分析中注明正确选项与学生选择的差异
+
+【输出模板】
+## 作业批改报告
+
+### 总分：X / 100
+
+> 一句话评语
+
+### 逐题批改（共 N 题）
+
+| 题号 | 学生答案 | 标准答案 | 判定 | 得分 | 分析 |
+|------|----------|----------|------|------|------|
+| 1 | 学生作答 | 标准答案 | ✅/❌ | 10/10 | 判定依据 |
+（表格必须包含全部 N 行，缺一不可）
+
+> 改进建议
+
+【输出末尾】请在批改报告最后一行，直接以纯文本输出一段 JSON 逐题详情（严禁使用任何代码块、严禁用 ``` 包裹）：
+[{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "标准答案", "is_correct": true, "score": 10, "full_score": 10, "analysis": "判定依据"}]
+（输出 JSON 后立即结束，不要附加任何额外内容）"""
+
+# 流式批改（有标准答案——OCR 文字模式）
+CORRECT_WITH_ANSWERS_STREAM_OCR_PROMPT = """你是一位严谨的专业教师，请根据标准答案批改OCR识别的作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **标准答案中有多少道题，就必须批改多少道题**，逐题对照，一题都不能漏。
+2. 在报告开头声明"共 N 道题"，表格必须包含全部 N 道题。
+3. **严禁以任何理由减少表格中的行数**。
+
+【严格禁令】
+1. 禁止提及OCR或识别过程。
+2. 严禁丢弃数字，确保每个数值完整准确。
+3. 智能纠正OCR识别错误。
+4. 判定必须严格依据标准答案，不可主观臆断。
+
+【选择题判定规则——极其重要】
+- 学生答案与标准答案完全一致 → ✅ | 不一致 → ❌
+- 单选题只有一个正确选项，不存在"部分正确"
+
+【输出模板】
+## 作业批改报告
+
+### 总分：X / 100
+
+> 一句话评语
+
+### 逐题批改（共 N 题）
+
+| 题号 | 学生答案 | 标准答案 | 判定 | 得分 | 分析 |
+|------|----------|----------|------|------|------|
+| 1 | 学生作答 | 标准答案 | ✅/❌ | 10/10 | 判定依据 |
+（表格必须包含全部 N 行，缺一不可）
+
+> 改进建议
+
+【输出末尾】请在批改报告最后一行，直接以纯文本输出一段 JSON 逐题详情（严禁使用任何代码块、严禁用 ``` 包裹）：
+[{"question_no": "1", "question_text": "完整题干", "student_answer": "学生答案", "standard_answer": "标准答案", "is_correct": true, "score": 10, "full_score": 10, "analysis": "判定依据"}]
+（输出 JSON 后立即结束，不要附加任何额外内容）"""
+
 # 无标准答案批改（OCR 文字模式）
-SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
+SYSTEM_PROMPT_OCR = """你是一位严谨的专业教师，请批改以下作业。批改必须客观、准确、一致。
+
+【逐题全覆盖——最高优先级，违反此条即为批改失败】
+1. **必须批改OCR文字中出现的每一道题**，无论题目多少（5题、10题、20题），一题都不能漏。
+2. 在报告开头先声明"共识别到 N 道题"，然后逐一批改全部 N 道题。
+3. **严禁以"其余题目类似"、"省略"、"略"等任何理由跳过题目**。
+4. 输出必须包含OCR文字中所有题目的完整批改，缺一不可。
 
 【绝对禁令】
 1. **禁止输出残缺数字**：如 ".kg"、"N"、"/" 是不允许的。必须补全为 "0.54kg"、"5N"、"15/20"。
 2. **禁止提及 OCR 过程**。
+3. **严禁摇摆不定**：同一份作业，每次批改必须给出完全一致的判定和分数。
+4. **选择题必须给确定答案**：单选题只能有一个正确选项，逐一排除后确认。
+
+【选择题批改流程】
+1. 先独立解出正确答案。
+2. 再对照学生的选择，判断是否一致。
+3. 在解析中说明每个选项的对错原因。
 
 【输出结构】
-## 1. 识别题目
-(列出修正后的完整题目，确保每个数字都清晰可见)
+## 1. 识别题目（共 N 题）
+(列出修正后的完整题目，确保每个数字都清晰可见，列出全部 N 题)
 
 ## 2. 评分
 总分：**X / 100**
@@ -165,6 +295,7 @@ SYSTEM_PROMPT_OCR = """你是一位专业教师，请批改以下作业。
 - **第1题**：**[得分/满分]** [判定]
   - **答案**：[正确结果]
   - **解析**：[30字内核心理由，包含关键计算步骤]
+（逐题批改全部 N 题，不可跳过任何一题）
 
 请直接输出结果，确保公式和数值的完整性。
 
@@ -254,7 +385,7 @@ class HomeworkAgent:
             model=config.MODEL_NAME,
             base_url=config.MODEL_BASE_URL,
             api_key=config.MODEL_API_KEY,
-            temperature=0.3,
+            temperature=0.0,
             timeout=300,
         )
         self.last_score = None
@@ -473,9 +604,9 @@ class HomeworkAgent:
 
         # 图片模式（原有逻辑）
         prompt_text = (
-            f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+            f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
             f"请严格按标准答案批改这份学生作业（文件名：{os.path.basename(file_path)}），"
-            "仅返回规定结构的 JSON。"
+            f"必须批改全部 {len(standard_answers)} 道题，一题都不能漏。仅返回规定结构的 JSON。"
         )
         msg = self._build_image_message(file_path, prompt_text)
         messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_PROMPT), msg]
@@ -508,10 +639,10 @@ class HomeworkAgent:
         """OCR 模式：带标准答案的结构化批改。"""
         answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
         prompt_text = (
-            f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+            f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
             f"以下是通过 OCR 从学生作业图片（{os.path.basename(file_path)}）中识别出的文字内容：\n\n"
             f"{ocr_text}\n\n"
-            "请严格按标准答案批改学生作答，仅返回规定结构的 JSON。"
+            f"请严格按标准答案批改学生作答，必须批改全部 {len(standard_answers)} 道题。仅返回规定结构的 JSON。"
         )
         msg = HumanMessage(content=prompt_text)
         messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_OCR_PROMPT), msg]
@@ -597,7 +728,7 @@ class HomeworkAgent:
 
         full_content = ""
 
-        # 如果有标准答案，使用结构化批改模式
+        # 如果有标准答案，使用 Markdown 流式批改模式
         if standard_answers:
             answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
 
@@ -606,13 +737,13 @@ class HomeworkAgent:
                 ocr_text = self._ocr_single(file_path)
                 if ocr_text.strip():
                     prompt_text = (
-                        f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+                        f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
                         f"以下是通过 OCR 从学生作业图片（{self._last_filename}）中识别出的文字内容：\n\n"
                         f"{ocr_text}\n\n"
-                        "请严格按标准答案批改学生作答，逐步输出批改内容。"
+                        f"请严格按标准答案批改学生作答，必须批改全部 {len(standard_answers)} 道题。"
                     )
                     msg = HumanMessage(content=prompt_text)
-                    messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_OCR_PROMPT), msg]
+                    messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_OCR_PROMPT), msg]
 
                     logger.info(f"流式批改使用 OCR + 标准答案模式: {self._last_filename}")
                     async for chunk in self.llm.astream(messages):
@@ -630,12 +761,12 @@ class HomeworkAgent:
 
             # 图片模式 + 标准答案
             prompt_text = (
-                f"试题标准答案（JSON）如下：\n{answers_json}\n\n"
+                f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
                 f"请严格按标准答案批改这份学生作业（文件名：{self._last_filename}），"
-                "逐步输出批改内容。"
+                f"必须批改全部 {len(standard_answers)} 道题。"
             )
             msg = self._build_image_message(file_path, prompt_text)
-            messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_PROMPT), msg]
+            messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_PROMPT), msg]
 
             logger.info(f"流式批改使用图片 + 标准答案模式: {self._last_filename}")
             async for chunk in self.llm.astream(messages):

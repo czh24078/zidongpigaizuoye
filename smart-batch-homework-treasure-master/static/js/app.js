@@ -295,8 +295,10 @@ const app = createApp({
                     showMessage('批改完成', 'success');
                 }
 
-                // 刷新历史记录
+                // 刷新历史记录、试题列表和题库
                 await fetchHistory();
+                await fetchExams();
+                await fetchQuestionBank();
             } catch (error) {
                 console.error('批改请求失败:', error);
                 const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message || '批改请求失败，请稍后重试';
@@ -375,6 +377,8 @@ const app = createApp({
                                 } else if (data.event === 'end') {
                                     showMessage('批改完成', 'success');
                                     await fetchHistory();
+                                    await fetchExams();
+                                    await fetchQuestionBank();
                                 }
                             } catch (e) {
                                 console.error('解析流式数据失败:', e, dataStr);
@@ -448,6 +452,24 @@ const app = createApp({
         // ==================== Markdown 渲染 ====================
 
         /**
+         * 清理文本中的 JSON 结构化数据残留
+         */
+        function cleanJsonArtifacts(text) {
+            if (!text) return text;
+            let cleaned = text;
+            // 1. 移除 ```json ... ``` 代码块
+            cleaned = cleaned.replace(/```json[\s\S]*?```/g, '');
+            cleaned = cleaned.replace(/```[\s\S]*?```/g, '');
+            // 2. 移除末尾的 JSON 数组 [...]
+            cleaned = cleaned.replace(/\n*\s*\[\s*\{\s*"question_no"[\s\S]*$/g, '');
+            // 3. 移除末尾的 JSON 对象 {...}
+            cleaned = cleaned.replace(/\n*\s*\{\s*"total_score"[\s\S]*$/g, '');
+            // 4. 清理多余的连续空行
+            cleaned = cleaned.replace(/\n{4,}/g, '\n\n\n');
+            return cleaned.trim();
+        }
+
+        /**
          * 使用 marked 渲染 Markdown
          */
         function renderMarkdown(text) {
@@ -460,7 +482,7 @@ const app = createApp({
                     headerIds: false,
                     mangle: false
                 });
-                return marked.parse(text);
+                return marked.parse(cleanJsonArtifacts(text));
             } catch (error) {
                 console.error('Markdown 渲染失败:', error);
                 return `<pre>${escapeHtml(text)}</pre>`;

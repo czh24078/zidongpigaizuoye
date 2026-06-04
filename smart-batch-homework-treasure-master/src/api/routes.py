@@ -118,6 +118,36 @@ async def _save_upload_file(file: UploadFile, subdir: str = "") -> str:
     return save_path
 
 
+async def _auto_add_to_bank(session: AsyncSession, exam_id: str, questions: list[dict], display_name: str) -> int:
+    """将题目自动加入题库（去重），返回新增数量。"""
+    max_no_result = await session.execute(select(func.max(QuestionBankItem.bank_no)))
+    max_no = max_no_result.scalar() or 0
+    added = 0
+    for q in questions:
+        q_text = q.get("question_text", "")
+        q_answer = q.get("standard_answer", "")
+        existing = await session.execute(
+            select(QuestionBankItem).where(
+                QuestionBankItem.question_text == q_text,
+                QuestionBankItem.standard_answer == q_answer,
+            )
+        )
+        if existing.scalar_one_or_none():
+            continue
+        added += 1
+        session.add(QuestionBankItem(
+            exam_id=exam_id,
+            question_no=q.get("question_no", ""),
+            question_text=q_text,
+            standard_answer=q_answer,
+            analysis=q.get("analysis", ""),
+            exam_filename=display_name,
+            bank_no=max_no + added,
+            added_at=datetime.now(),
+        ))
+    return added
+
+
 def _save_record_docx(
     correction_id: str, filename: str, exam: Optional[ExamResponse],
     score: Optional[int], details: list[CorrectionDetail],
@@ -257,21 +287,8 @@ async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession
     db_exam = Exam.from_pydantic(exam)
     session.add(db_exam)
 
-    # 自动将试题题目加入题库
-    max_no_result = await session.execute(select(func.max(QuestionBankItem.bank_no)))
-    max_no = max_no_result.scalar() or 0
-    for i, q in enumerate(questions_data, start=1):
-        bank_item = QuestionBankItem(
-            exam_id=exam.id,
-            question_no=q.get("question_no", str(i)),
-            question_text=q.get("question_text", ""),
-            standard_answer=q.get("standard_answer", ""),
-            analysis=q.get("analysis", ""),
-            exam_filename=display_name,
-            bank_no=max_no + i,
-            added_at=datetime.now(),
-        )
-        session.add(bank_item)
+    # 自动将试题题目加入题库（去重）
+    await _auto_add_to_bank(session, exam.id, questions_data, display_name)
 
     await session.commit()
     return exam
@@ -438,6 +455,16 @@ async def correct_homework(
         session.add(db_history_exam)
         db_correction.exam_id = history_exam_id
 
+    # 自动将批改题目加入题库
+    if details_objs:
+        questions_data = [{
+            "question_no": d.question_no,
+            "question_text": d.question_text,
+            "standard_answer": d.standard_answer,
+            "analysis": d.analysis,
+        } for d in details_objs]
+        await _auto_add_to_bank(session, final_exam_id, questions_data, f"[批改] {file.filename or 'unknown'}")
+
     await session.commit()
 
     return CorrectionResponse(
@@ -496,7 +523,7 @@ async def correct_homework_stream(
                     except Exception:
                         pass
 
-            yield f"data: {json.dumps({'event': 'end', 'message': '批改完成'}, ensure_ascii=False)}\n\n"
+            # 'end' 事件将在数据库保存完成后发出，确保前端刷新时数据已入库
 
             score = getattr(homework_agent, "last_score", None) if AGENT_AVAILABLE else 85
             details_objs = _details_from_dicts(
@@ -530,10 +557,13 @@ async def correct_homework_stream(
                     db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
                 save_session.add(db_correction)
 
+                final_exam_id = exam.id if exam else None
+
                 # 自动将批改识别出的题目存入历史题目（无关联试题时自动创建试题记录）
                 if details_objs and not exam:
                     from src.models.db_models import Question as QDB
                     history_exam_id = str(uuid.uuid4())
+                    final_exam_id = history_exam_id
                     db_history_exam = Exam(
                         id=history_exam_id,
                         filename=f"[批改] {file.filename or 'unknown'}",
@@ -549,7 +579,21 @@ async def correct_homework_stream(
                     save_session.add(db_history_exam)
                     db_correction.exam_id = history_exam_id
 
+                # 自动将批改题目加入题库
+                if details_objs:
+                    questions_data = [{
+                        "question_no": d.question_no,
+                        "question_text": d.question_text,
+                        "standard_answer": d.standard_answer,
+                        "analysis": d.analysis,
+                    } for d in details_objs]
+                    await _auto_add_to_bank(save_session, final_exam_id, questions_data,
+                                            f"[批改] {file.filename or 'unknown'}")
+
                 await save_session.commit()
+
+            # 数据库保存完成后再通知前端，确保刷新时数据已入库
+            yield f"data: {json.dumps({'event': 'end', 'message': '批改完成'}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
             logger.error(f"流式生成器异常: {e}")
