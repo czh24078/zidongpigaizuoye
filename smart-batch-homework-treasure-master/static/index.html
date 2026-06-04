@@ -346,7 +346,7 @@
                             <div class="question-history-content" @click="viewQuestionDetail(q)">
                                 <div class="question-history-text" v-html="highlightKeyword(q.question_text || '（无题干）')"></div>
                                 <div class="question-history-meta">
-                                    <el-tag size="small" type="info" effect="plain">{{ q.examFilename }}</el-tag>
+                                    <el-tag size="small" :type="getSubjectTagType(q.subject)" effect="plain">{{ q.subject }}</el-tag>
                                     <span class="question-history-answer" v-if="q.standard_answer">答案：{{ q.standard_answer }}</span>
                                 </div>
                             </div>
@@ -380,6 +380,8 @@
                                     <el-option label="语文" value="语文"></el-option>
                                     <el-option label="数学" value="数学"></el-option>
                                     <el-option label="物理" value="物理"></el-option>
+                                    <el-option label="历史" value="历史"></el-option>
+                                    <el-option label="其他" value="其他"></el-option>
                                 </el-select>
                             </el-form-item>
                             <el-form-item label="题目数量">
@@ -450,6 +452,8 @@
                                     <el-select v-model="aiForm.subject" style="width:100%;">
                                         <el-option label="语文" value="语文"></el-option>
                                         <el-option label="数学" value="数学"></el-option>
+                                        <el-option label="物理" value="物理"></el-option>
+                                        <el-option label="历史" value="历史"></el-option>
                                     </el-select>
                                 </el-form-item>
                             </el-col>
@@ -617,6 +621,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=25"></script>
+    <script src="/static/js/app.js?v=26"></script>
 </body>
 </html>

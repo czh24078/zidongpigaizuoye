@@ -449,6 +449,11 @@ const app = createApp({
             return 'danger';
         }
 
+        function getSubjectTagType(subject) {
+            const map = { '语文': '', '数学': 'success', '物理': 'warning', '历史': 'danger' };
+            return map[subject] || 'info';
+        }
+
         // ==================== Markdown 渲染 ====================
 
         /**
@@ -520,11 +525,8 @@ const app = createApp({
                     headers: { 'Content-Type': 'multipart/form-data' },
                     timeout: 180000
                 });
-                showMessage(`试题识别完成（${validFiles.length} 张图），已生成标准答案`, 'success');
-                await fetchExams();
-                if (resp.data && resp.data.id) {
-                    selectedExamId.value = resp.data.id;
-                }
+                showMessage(resp.data.message || `试题识别完成，已导入题库`, 'success');
+                await fetchQuestionBank();
             } catch (error) {
                 console.error(error);
                 const msg = error.response?.data?.detail || error.message || '试题上传失败';
@@ -594,7 +596,8 @@ const app = createApp({
                     question_text: q.question_text,
                     standard_answer: q.standard_answer,
                     analysis: q.analysis,
-                    exam_filename: q.examFilename
+                    exam_filename: q.examFilename,
+                    subject: q.subject || getQuestionSubject(q)
                 });
                 await fetchQuestionBank();
                 showMessage('已加入题库', 'success');
@@ -668,7 +671,7 @@ const app = createApp({
             }
             let pool = questionBank.value;
             if (examPaperSubject.value !== '不限') {
-                pool = pool.filter(q => getQuestionSubject(q) === examPaperSubject.value);
+                pool = pool.filter(q => q.subject === examPaperSubject.value);
                 if (pool.length === 0) {
                     showMessage(`题库中没有"${examPaperSubject.value}"科目的题目`, 'warning');
                     return;
@@ -768,7 +771,8 @@ const app = createApp({
                     question_text: q.question_text,
                     standard_answer: q.standard_answer,
                     analysis: q.analysis,
-                    exam_filename: 'AI生成题目'
+                    exam_filename: 'AI生成题目',
+                    subject: aiForm.subject
                 });
                 addedGeneratedKeys.add(q.question_no + '::' + q.question_text);
                 await fetchQuestionBank();
@@ -966,6 +970,7 @@ const app = createApp({
             fetchHistory,
             viewHistoryDetail,
             getScoreTagType,
+            getSubjectTagType,
             renderMarkdown,
 
             // 导航栏方法

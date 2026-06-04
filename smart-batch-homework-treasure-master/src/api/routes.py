@@ -118,7 +118,7 @@ async def _save_upload_file(file: UploadFile, subdir: str = "") -> str:
     return save_path
 
 
-async def _auto_add_to_bank(session: AsyncSession, exam_id: str, questions: list[dict], display_name: str) -> int:
+async def _auto_add_to_bank(session: AsyncSession, exam_id: Optional[str], questions: list[dict], display_name: str) -> int:
     """将题目自动加入题库（去重），返回新增数量。"""
     max_no_result = await session.execute(select(func.max(QuestionBankItem.bank_no)))
     max_no = max_no_result.scalar() or 0
@@ -134,6 +134,7 @@ async def _auto_add_to_bank(session: AsyncSession, exam_id: str, questions: list
         )
         if existing.scalar_one_or_none():
             continue
+        subject = q.get("subject") or _guess_subject(display_name, q_text)
         added += 1
         session.add(QuestionBankItem(
             exam_id=exam_id,
@@ -143,9 +144,33 @@ async def _auto_add_to_bank(session: AsyncSession, exam_id: str, questions: list
             analysis=q.get("analysis", ""),
             exam_filename=display_name,
             bank_no=max_no + added,
+            subject=subject,
             added_at=datetime.now(),
         ))
     return added
+
+
+SUBJECT_KEYWORDS = {
+    "语文": ["语文", "古诗", "文言", "阅读", "成语", "拼音", "汉字", "修辞", "病句", "句式", "标点", "词语", "诗歌", "古文", "赏析", "翻译", "解释加点", "默写", "对联", "近义词", "反义词", "造句", "缩句", "扩句"],
+    "数学": ["数学", "方程", "几何", "函数", "概率", "统计", "三角", "代数", "数列", "不等式", "整除", "余数", "质数", "合数", "约分", "通分"],
+    "物理": ["物理", "力", "速度", "加速度", "压强", "浮力", "电路", "电压", "电流", "电阻", "磁场", "电场", "光学", "热学", "功", "功率", "能量", "牛顿", "焦耳", "欧姆", "串联", "并联", "折射", "反射", "密度", "重力", "摩擦力", "弹性", "波长", "频率"],
+}
+
+
+def _guess_subject(filename: str, question_text: str) -> str:
+    """根据文件名和题干关键词猜测科目。"""
+    fn = filename.lower()
+    for subj in ["语文", "数学", "物理", "历史"]:
+        if subj in fn:
+            return subj
+    text = question_text.lower()
+    scores = {subj: 0 for subj in SUBJECT_KEYWORDS}
+    for subj, keywords in SUBJECT_KEYWORDS.items():
+        for kw in keywords:
+            if kw in text:
+                scores[subj] += 1
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else "其他"
 
 
 def _save_record_docx(
@@ -250,7 +275,7 @@ async def _get_exam_pydantic(session: AsyncSession, exam_id: str) -> Optional[Ex
 # 试题（Exam）接口
 # =====================================================================
 
-@router.post("/exam/upload", response_model=ExamResponse)
+@router.post("/exam/upload")
 async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession = Depends(get_db)):
     if not files:
         raise HTTPException(status_code=400, detail="请至少上传一张图片")
@@ -276,22 +301,12 @@ async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession
         raise HTTPException(status_code=500, detail="试题识别失败，请更换清晰的图片重试")
 
     display_name = " + ".join(filenames) if len(filenames) > 1 else filenames[0]
-    exam = ExamResponse(
-        id=str(uuid.uuid4()),
-        filename=display_name,
-        questions=[QuestionItem(**q) for q in questions_data],
-        source="ai",
-        created_at=datetime.now(),
-    )
 
-    db_exam = Exam.from_pydantic(exam)
-    session.add(db_exam)
-
-    # 自动将试题题目加入题库（去重）
-    await _auto_add_to_bank(session, exam.id, questions_data, display_name)
+    # 自动将试题题目加入题库（去重），不创建历史试卷记录
+    bank_added = await _auto_add_to_bank(session, None, questions_data, display_name)
 
     await session.commit()
-    return exam
+    return {"message": f"试题识别完成，{bank_added} 道题目已导入题库", "bank_added": bank_added, "filename": display_name}
 
 
 @router.get("/exams", response_model=list[ExamResponse])
@@ -436,8 +451,8 @@ async def correct_homework(
         db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
     session.add(db_correction)
 
-    # 自动将批改识别出的题目存入历史题目（无关联试题时自动创建试题记录）
-    if details_objs and not exam:
+    # 自动将批改识别出的题目存入历史题目
+    if details_objs:
         history_exam_id = str(uuid.uuid4())
         final_exam_id = history_exam_id
         db_history_exam = Exam(
@@ -454,16 +469,6 @@ async def correct_homework(
         )
         session.add(db_history_exam)
         db_correction.exam_id = history_exam_id
-
-    # 自动将批改题目加入题库
-    if details_objs:
-        questions_data = [{
-            "question_no": d.question_no,
-            "question_text": d.question_text,
-            "standard_answer": d.standard_answer,
-            "analysis": d.analysis,
-        } for d in details_objs]
-        await _auto_add_to_bank(session, final_exam_id, questions_data, f"[批改] {file.filename or 'unknown'}")
 
     await session.commit()
 
@@ -559,8 +564,8 @@ async def correct_homework_stream(
 
                 final_exam_id = exam.id if exam else None
 
-                # 自动将批改识别出的题目存入历史题目（无关联试题时自动创建试题记录）
-                if details_objs and not exam:
+                # 自动将批改识别出的题目存入历史题目
+                if details_objs:
                     from src.models.db_models import Question as QDB
                     history_exam_id = str(uuid.uuid4())
                     final_exam_id = history_exam_id
@@ -578,17 +583,6 @@ async def correct_homework_stream(
                     )
                     save_session.add(db_history_exam)
                     db_correction.exam_id = history_exam_id
-
-                # 自动将批改题目加入题库
-                if details_objs:
-                    questions_data = [{
-                        "question_no": d.question_no,
-                        "question_text": d.question_text,
-                        "standard_answer": d.standard_answer,
-                        "analysis": d.analysis,
-                    } for d in details_objs]
-                    await _auto_add_to_bank(save_session, final_exam_id, questions_data,
-                                            f"[批改] {file.filename or 'unknown'}")
 
                 await save_session.commit()
 
@@ -687,6 +681,7 @@ async def export_exam_paper(payload: list[dict]):
 async def list_question_bank(
     keyword: Optional[str] = None,
     question_no: Optional[str] = None,
+    subject: Optional[str] = None,
     session: AsyncSession = Depends(get_db),
 ):
     stmt = select(QuestionBankItem).order_by(QuestionBankItem.bank_no.asc())
@@ -698,6 +693,8 @@ async def list_question_bank(
             QuestionBankItem.standard_answer.contains(kw),
             QuestionBankItem.analysis.contains(kw),
         ))
+    if subject:
+        stmt = stmt.where(QuestionBankItem.subject == subject.strip())
     if question_no:
         try:
             stmt = stmt.where(QuestionBankItem.bank_no == int(question_no.strip()))
@@ -745,6 +742,7 @@ async def add_to_bank(payload: AddToBankRequest, session: AsyncSession = Depends
         analysis=payload.analysis,
         exam_filename=payload.exam_filename,
         bank_no=max_no + 1,
+        subject=payload.subject or _guess_subject(payload.exam_filename, payload.question_text),
         added_at=datetime.now(),
     )
     session.add(item)

@@ -23,6 +23,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_migrate_bank_no)
+        await conn.run_sync(_migrate_subject)
 
 
 def _migrate_bank_no(conn) -> None:
@@ -42,4 +43,19 @@ def _migrate_bank_no(conn) -> None:
         conn.exec_driver_sql(
             "UPDATE question_bank SET bank_no = :no WHERE id = :rid",
             {"no": i, "rid": row_id},
+        )
+
+
+def _migrate_subject(conn) -> None:
+    """为 question_bank 和 questions 表添加 subject 列（如果尚不存在）。"""
+    for table in ("question_bank", "questions"):
+        rows = conn.exec_driver_sql(
+            f"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+            f"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{table}' "
+            f"AND COLUMN_NAME = 'subject'",
+        ).fetchall()
+        if rows[0][0] > 0:
+            continue
+        conn.exec_driver_sql(
+            f"ALTER TABLE `{table}` ADD COLUMN `subject` VARCHAR(20) NOT NULL DEFAULT '其他'"
         )

@@ -58,6 +58,7 @@ class Question(Base):
     standard_answer = Column(Text, nullable=False)
     options = Column(Text, nullable=True)
     analysis = Column(Text, nullable=True)
+    subject = Column(String(20), nullable=False, default="其他")
 
     exam = relationship("Exam", back_populates="questions")
 
@@ -69,6 +70,7 @@ class Question(Base):
             standard_answer=data.standard_answer,
             options=data.options,
             analysis=data.analysis,
+            subject=data.subject,
         )
 
     def to_pydantic(self) -> "QuestionItem":
@@ -79,6 +81,7 @@ class Question(Base):
             standard_answer=self.standard_answer,
             options=self.options,
             analysis=self.analysis,
+            subject=self.subject,
         )
 
 
@@ -195,6 +198,7 @@ class QuestionBankItem(Base):
     analysis = Column(Text, nullable=True)
     exam_filename = Column(String(500), nullable=False)
     bank_no = Column(Integer, nullable=True)
+    subject = Column(String(20), nullable=False, default="其他")
     added_at = Column(DateTime, nullable=False, default=datetime.now)
 
     exam = relationship("Exam", back_populates="bank_items")
@@ -210,5 +214,6 @@ class QuestionBankItem(Base):
             analysis=self.analysis,
             exam_filename=self.exam_filename,
             bank_no=self.bank_no,
+            subject=self.subject,
             added_at=self.added_at,
         )

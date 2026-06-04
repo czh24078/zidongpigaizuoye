@@ -10,6 +10,7 @@ class QuestionItem(BaseModel):
     standard_answer: str                   # 标准答案
     options: Optional[str] = None          # 选择题选项（如 "A. xxx B. xxx C. xxx D. xxx"）
     analysis: Optional[str] = None         # 解题分析（可选）
+    subject: str = "其他"                   # 科目：语文/数学/物理/历史/其他
 
 
 class ExamResponse(BaseModel):
@@ -71,6 +72,7 @@ class QuestionBankItemSchema(BaseModel):
     analysis: Optional[str] = None
     exam_filename: str
     bank_no: Optional[int] = None
+    subject: str = "其他"
     added_at: datetime
 
 
@@ -82,6 +84,7 @@ class AddToBankRequest(BaseModel):
     standard_answer: str
     analysis: Optional[str] = None
     exam_filename: str
+    subject: str = "其他"
 
 
 class AIGenerateRequest(BaseModel):
