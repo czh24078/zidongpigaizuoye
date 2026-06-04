@@ -24,7 +24,6 @@ const app = createApp({
 
         // 导航栏状态
         const activeNav = ref('home');
-        const sidebarCollapsed = ref(false);
 
         // 历史题目查看状态
         const questionDetailVisible = ref(false);
@@ -551,14 +550,6 @@ const app = createApp({
             }
         }
 
-        function onExamChange() { /* 选择变更时的占位钩子 */ }
-
-        // ==================== 导航栏 ====================
-
-        function onNavSelect(index) {
-            activeNav.value = index;
-        }
-
         // ==================== 历史题目 ====================
 
         function viewQuestionDetail(q) {
@@ -916,10 +907,8 @@ const app = createApp({
 
             // 导航栏状态
             activeNav,
-            sidebarCollapsed,
             questionDetailVisible,
             viewingQuestion,
-            allQuestions,
             filteredQuestions,
             questionBank,
             filteredBank,
@@ -957,10 +946,8 @@ const app = createApp({
             viewHistoryDetail,
             getScoreTagType,
             getSubjectTagType,
-            renderMarkdown,
 
             // 导航栏方法
-            onNavSelect,
             viewQuestionDetail,
             clearBankSearch,
             highlightKeyword,
@@ -985,7 +972,6 @@ const app = createApp({
             triggerExamFileInput,
             handleExamFileSelect,
             fetchExams,
-            onExamChange,
             openAnswerEditor,
             addBlankQuestion,
             saveAnswers,

@@ -73,7 +73,7 @@
                            @change="handleExamFileSelect" style="display:none;">
 
                     <el-select v-model="selectedExamId" placeholder="选择已有试题" clearable style="width:320px;"
-                               @change="onExamChange">
+                               >
                         <el-option v-for="e in exams" :key="e.id" :label="e.filename + ' (' + e.questions.length + '题)'" :value="e.id" />
                     </el-select>
 

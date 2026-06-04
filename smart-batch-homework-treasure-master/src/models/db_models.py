@@ -27,16 +27,6 @@ class Exam(Base):
     bank_items = relationship("QuestionBankItem", back_populates="exam", lazy="selectin",
                               foreign_keys="QuestionBankItem.exam_id")
 
-    @classmethod
-    def from_pydantic(cls, data: "ExamResponse") -> "Exam":
-        return cls(
-            id=data.id,
-            filename=data.filename,
-            source=data.source,
-            created_at=data.created_at,
-            questions=[Question.from_pydantic(q) for q in data.questions],
-        )
-
     def to_pydantic(self) -> "ExamResponse":
         from src.models.schemas import ExamResponse
         return ExamResponse(
@@ -101,20 +91,6 @@ class Correction(Base):
                         foreign_keys=[exam_id])
     details = relationship("CorrectionDetail", back_populates="correction",
                            cascade="all, delete-orphan", lazy="selectin")
-
-    @classmethod
-    def from_pydantic(cls, data: "CorrectionResponse") -> "Correction":
-        return cls(
-            id=data.id,
-            filename=data.filename,
-            result=data.result,
-            score=data.score,
-            summary=None,  # set separately
-            exam_id=data.exam_id,
-            record_path=data.record_path,
-            created_at=data.created_at,
-            details=[CorrectionDetail.from_pydantic(d) for d in (data.details or [])],
-        )
 
     def to_pydantic(self) -> "CorrectionResponse":
         from src.models.schemas import CorrectionResponse

@@ -18,7 +18,6 @@ from src.models.schemas import (
     CorrectionResponse,
     HistoryItem,
     ExamResponse,
-    QuestionItem,
     UpdateAnswersRequest,
     CorrectionDetail,
     QuestionBankItemSchema,
