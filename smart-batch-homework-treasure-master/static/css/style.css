@@ -12,10 +12,10 @@
     --card-bg: #ffffff;
     --text-primary: #1a1a1a;
     --text-regular: #555555;
-    --text-secondary: #8a8a8a;
+    --text-secondary: #6b6b6b;
     --border-color: #e8e4dc;
     --sidebar-bg: #252525;
-    --sidebar-text: rgba(255, 255, 255, 0.65);
+    --sidebar-text: rgba(255, 255, 255, 0.80);
     --sidebar-active-bg: #b85c3a;
     --header-bg: #1c1c1c;
     --border-radius: 8px;
@@ -80,7 +80,7 @@
     --el-bg-color-overlay: #ffffff;
     --el-text-color-primary: #1a1a1a;
     --el-text-color-regular: #555555;
-    --el-text-color-secondary: #8a8a8a;
+    --el-text-color-secondary: #6b6b6b;
     --el-border-color: #e8e4dc;
     --el-border-color-light: #f0ede6;
     --el-border-color-lighter: #f5f2ee;
@@ -935,6 +935,23 @@ body {
     justify-content: flex-end;
 }
 
+/* ==================== 键盘焦点指示器 ==================== */
+:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.el-button:focus-visible {
+    box-shadow: 0 0 0 2px var(--primary-color);
+}
+
+.el-input__wrapper:focus,
+.el-input__wrapper:focus-within,
+.el-textarea__inner:focus {
+    outline: none;
+}
+
 /* ==================== 动画 ==================== */
 @keyframes fadeIn {
     from { opacity: 0; }
@@ -1462,10 +1479,9 @@ body {
 .ai-offline-warning {
     background: #fef0f0;
     border: 1px solid #f56c6c;
-    border-left: 4px solid #f56c6c;
     color: #c45656;
     padding: 12px 16px;
-    border-radius: 4px;
+    border-radius: 6px;
     margin-bottom: 16px;
     font-size: 14px;
     line-height: 1.6;

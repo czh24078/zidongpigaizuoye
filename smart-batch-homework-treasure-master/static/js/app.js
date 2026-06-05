@@ -879,6 +879,15 @@ const app = createApp({
             fetchHistory();
             fetchExams();
             fetchQuestionBank();
+
+            document.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    if (uploadFiles.value.length > 0 && !isLoading.value) {
+                        e.preventDefault();
+                        submitCorrection();
+                    }
+                }
+            });
         });
 
         // ==================== 返回 ====================

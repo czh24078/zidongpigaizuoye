@@ -2,23 +2,43 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-netstat -ano 2>nul | findstr ":3307 " >nul
+set "MYSQL_EXE=C:\Program Files\MySQL\MySQL Server 8.0\bin\mysqld.exe"
+set "MYSQL_PORT=3307"
+set "PYTHON=.venv\Scripts\python.exe"
+
+echo ============================================
+echo   Homework Grading System
+echo ============================================
+echo.
+
+REM -- 1. Start MySQL --
+netstat -ano 2>nul | findstr ":%MYSQL_PORT% " >nul
 if %errorlevel% neq 0 (
-    echo [INFO] MySQL not running, starting...
-    start "MySQL-Homework" /MIN "D:\mysql\bin\mysqld.exe" --defaults-file="%~dp0my.ini" --console
-    :wait_mysql
-    timeout /t 1 /nobreak >nul
-    netstat -ano 2>nul | findstr ":3307 " >nul
-    if %errorlevel% neq 0 goto wait_mysql
-    echo [INFO] MySQL ready
+    echo [1/2] Starting MySQL...
+    start "MySQL-Homework" /MIN "%MYSQL_EXE%" --defaults-file="%~dp0my.ini"
+    call :wait_mysql
+    echo       Ready
 ) else (
-    echo [INFO] MySQL already running
+    echo [1/2] MySQL already running
 )
 
-echo [INFO] Starting app...
-.venv\Scripts\python.exe src\main.py
+REM -- 2. Start app --
+echo [2/2] Starting app...
+echo ============================================
+echo.
+%PYTHON% src/main.py
 
-echo [INFO] Stopping MySQL...
+REM -- Cleanup --
+echo.
+echo Stopping MySQL...
 taskkill /FI "WINDOWTITLE eq MySQL-Homework" /F 2>nul
-echo [INFO] Done
+echo Stopped
 pause
+exit /b 0
+
+REM -- Subroutines --
+:wait_mysql
+timeout /t 2 /nobreak >nul
+netstat -ano 2>nul | findstr ":%MYSQL_PORT% " >nul
+if %errorlevel% neq 0 goto wait_mysql
+exit /b 0

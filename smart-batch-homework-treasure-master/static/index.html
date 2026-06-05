@@ -178,16 +178,18 @@
                                 <el-icon><check /></el-icon>
                                 开始批改
                             </el-button>
-                            <el-button
-                                    type="success"
-                                    size="large"
-                                    :disabled="uploadFiles.length === 0 || isLoading"
-                                    :loading="isLoading && isStreaming"
-                                    @click="submitCorrectionStream"
-                            >
-                                <el-icon><video-play /></el-icon>
-                                流式批改
-                            </el-button>
+                            <el-tooltip content="实时逐字显示批改结果，适合想观察 AI 推理过程的场景" placement="top">
+                                <el-button
+                                        type="default"
+                                        size="large"
+                                        :disabled="uploadFiles.length === 0 || isLoading"
+                                        :loading="isLoading && isStreaming"
+                                        @click="submitCorrectionStream"
+                                >
+                                    <el-icon><video-play /></el-icon>
+                                    流式批改
+                                </el-button>
+                            </el-tooltip>
                         </div>
                     </el-card>
                 </el-col>
