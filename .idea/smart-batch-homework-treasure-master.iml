@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/smart-batch-homework-treasure-master" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/smart-batch-homework-treasure-master/.venv" />
     </content>
-    <orderEntry type="inheritedJdk" />
+    <orderEntry type="jdk" jdkName="Python 3.13 (smart-batch-homework-treasure-master)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
   </component>
 </module>

@@ -560,7 +560,7 @@ class HomeworkAgent:
         response = await self.llm.ainvoke(messages)
         result = response.content or ""
         result, details = self._extract_details_json(result)
-        score = self._extract_score(result)
+        score = self._extract_score(result, details)
         return result, score, details
 
     async def _correct_with_ocr_text(self, file_path: str, ocr_text: str, filename: str
@@ -578,7 +578,7 @@ class HomeworkAgent:
         response = await self.llm.ainvoke(messages)
         result = response.content or ""
         result, details = self._extract_details_json(result)
-        score = self._extract_score(result)
+        score = self._extract_score(result, details)
         return result, score, details
 
     # ------------------------------------------------------------------
@@ -738,7 +738,7 @@ class HomeworkAgent:
                             yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
                     stripped, details = self._extract_details_json(full_content)
-                    score = self._extract_score(stripped)
+                    score = self._extract_score(stripped, details)
                     yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
                     yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
                     return
@@ -759,7 +759,7 @@ class HomeworkAgent:
                     yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
             stripped, details = self._extract_details_json(full_content)
-            score = self._extract_score(stripped)
+            score = self._extract_score(stripped, details)
             yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
             yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
             return
@@ -784,7 +784,7 @@ class HomeworkAgent:
                         yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
                 stripped, details = self._extract_details_json(full_content)
-                score = self._extract_score(stripped)
+                score = self._extract_score(stripped, details)
                 yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
                 yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
                 return
@@ -802,7 +802,7 @@ class HomeworkAgent:
                 yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
         stripped, details = self._extract_details_json(full_content)
-        score = self._extract_score(stripped)
+        score = self._extract_score(stripped, details)
         yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
         yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
 
@@ -849,7 +849,7 @@ class HomeworkAgent:
         cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
         return cleaned.strip(), details
 
-    def _extract_score(self, text: str) -> Optional[int]:
+    def _extract_score(self, text: str, details: Optional[List[dict]] = None) -> Optional[int]:
         """从批改文本中提取总分，支持多种常见格式；无法识别时从逐题详情汇总。"""
         patterns = [
             r"总分[：:]\s*\*{0,2}(\d+)\*{0,2}\s*/\s*\*{0,2}100\*{0,2}",
@@ -871,10 +871,11 @@ class HomeworkAgent:
                 except ValueError:
                     continue
 
-        # 从逐题详情汇总计算总分
-        if self.last_details:
+        # 从逐题详情汇总计算总分（兼容外部传入 details）
+        details_list = details if details is not None else []
+        if details_list:
             total = sum(
-                d.get("score", 0) for d in self.last_details
+                d.get("score", 0) for d in details_list
                 if isinstance(d, dict) and isinstance(d.get("score"), (int, float))
             )
             if total > 0:
