@@ -1,8 +1,9 @@
+import asyncio
 import json
 import logging
 import os
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -91,13 +92,13 @@ EXTRACT_EXAM_OCR_PROMPT = """你是一位严谨的学科老师，擅长审题与
 
 说明：
 - OCR 识别可能存在误差（如空格、符号错误、顺序紊乱等），请结合上下文智能纠正。
-- 可能包含多张图片的 OCR 结果，它们可能是“题目卷”、“答案卷”或“题目+答案合卷”。
+- 可能包含多张图片的 OCR 结果，它们可能是"题目卷"、"答案卷"或"题目+答案合卷"。
 - 请综合所有图片的 OCR 内容进行分析。
 
 要求：
 1. 忠实还原每道题目的题号与题干文本（公式可用 LaTeX 或文字描述）。
-2. 为每题给出明确、正确的“标准答案”。
-3. 为每题补充简要的“解题分析/要点”（可选，若题目较简单可留空字符串）。
+2. 为每题给出明确、正确的"标准答案"。
+3. 为每题补充简要的"解题分析/要点"（可选，若题目较简单可留空字符串）。
 4. 严格以 JSON 数组返回，不要输出任何其它解释、前后缀或代码块围栏；若必须使用代码块，请使用 ```json 包裹。
 
 JSON 结构（每个元素必须包含以下字段）：
@@ -382,7 +383,7 @@ def _parse_json_safely(text: str):
 
 
 class HomeworkAgent:
-    def __init__(self):
+    def __init__(self, max_concurrency: int = 5):
         self.llm = ChatOpenAI(
             model=config.MODEL_NAME,
             base_url=config.MODEL_BASE_URL,
@@ -390,11 +391,14 @@ class HomeworkAgent:
             temperature=0.0,
             timeout=300,
         )
+        self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._last_file_path = None
+        self._last_filename = None
         self._ocr_enabled = config.OCR_ENABLED and ocr_available()
         if self._ocr_enabled:
-            logger.info("OCR 已启用，将先提取文字再交给大模型")
+            logger.info(f"OCR enabled, AI max concurrency={max_concurrency}")
         else:
-            logger.info("OCR 未启用，将直接使用图片多模态模式")
+            logger.info(f"OCR disabled, AI max concurrency={max_concurrency}")
 
     # ------------------------------------------------------------------
     # 通用：构造多模态消息
@@ -453,7 +457,7 @@ class HomeworkAgent:
 
         # OCR 模式：先提取文字再交给大模型
         if self._ocr_enabled:
-            ocr_texts = self._ocr_multiple(file_paths)
+            ocr_texts = await asyncio.to_thread(self._ocr_multiple, file_paths)
             # 检查是否有有效的 OCR 结果
             has_text = any(t.strip() for t in ocr_texts)
             if has_text:
@@ -536,67 +540,63 @@ class HomeworkAgent:
     # 批改：无标准答案
     # ------------------------------------------------------------------
     async def correct(self, file_path: str, standard_answers: Optional[List[dict]] = None
-                     ) -> tuple[str, Optional[int], Optional[List[dict]]]:
-        “””批改作业，返回 (markdown, score, details)。”””
-        filename = os.path.basename(file_path)
+                      ) -> Tuple[str, Optional[int], Optional[List[dict]]]:
+        self._last_file_path = file_path
+        self._last_filename = os.path.basename(file_path)
 
-        if standard_answers:
-            return await self._correct_with_answers(file_path, standard_answers)
+        async with self._semaphore:
+            if standard_answers:
+                return await self._correct_with_answers(file_path, standard_answers)
 
-        # OCR 模式：先提取文字再交给大模型
-        if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
-            if ocr_text.strip():
-                return await self._correct_with_ocr_text(file_path, ocr_text, filename)
-            else:
-                logger.warning(“OCR 未识别到文字，回退到图片模式”)
+            if self._ocr_enabled:
+                ocr_text = await asyncio.to_thread(self._ocr_single, file_path)
+                if ocr_text.strip():
+                    return await self._correct_with_ocr_text(file_path, ocr_text)
+                else:
+                    logger.warning("OCR returned empty, falling back to image mode")
 
-        # 图片模式（原有逻辑）
-        msg = self._build_image_message(
-            file_path,
-            f”请批改这份作业（文件名：{filename}）：”
-        )
-        messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
-        response = await self.llm.ainvoke(messages)
-        result = response.content or “”
-        result, details = self._extract_details_json(result)
-        score = self._extract_score(result)
-        return result, score, details
-
-    async def _correct_with_ocr_text(self, file_path: str, ocr_text: str, filename: str
-                                    ) -> tuple[str, Optional[int], Optional[List[dict]]]:
-        “””使用 OCR 文字进行无标准答案批改。”””
+            msg = self._build_image_message(
+                file_path,
+                f"Please grade: {self._last_filename}"
+            )
+            messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
+            response = await self.llm.ainvoke(messages)
+            result = response.content or ""
+            result, details = self._extract_details_json(result)
+            score = self._extract_score(result, details)
+            return result, score, details
+    
+    async def _correct_with_ocr_text(self, file_path: str, ocr_text: str
+                                      ) -> Tuple[str, Optional[int], Optional[List[dict]]]:
         prompt_text = (
-            f”以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n”
-            f”{ocr_text}\n\n”
-            “请根据以上 OCR 识别内容批改这份作业。”
+            f"以下是通过 OCR 从学生作业图片（{self._last_filename}）中识别出的文字内容：\n\n"
+            f"{ocr_text}\n\n"
+            "请根据以上 OCR 识别内容批改这份作业。"
         )
         msg = HumanMessage(content=prompt_text)
         messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
-        logger.info(f”使用 OCR 文字模式批改作业: {filename}”)
+        logger.info(f"使用 OCR 文字模式批改作业: {self._last_filename}")
         response = await self.llm.ainvoke(messages)
-        result = response.content or “”
+        result = response.content or ""
         result, details = self._extract_details_json(result)
-        score = self._extract_score(result)
+        score = self._extract_score(result, details)
         return result, score, details
 
     # ------------------------------------------------------------------
     # 批改：带标准答案（结构化输出 -> Markdown）
     # ------------------------------------------------------------------
     async def _correct_with_answers(self, file_path: str, standard_answers: List[dict]
-                                   ) -> tuple[str, Optional[int], Optional[List[dict]]]:
+                                    ) -> Tuple[str, Optional[int], Optional[List[dict]]]:
         answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
 
-        # OCR 模式
         if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
+            ocr_text = await asyncio.to_thread(self._ocr_single, file_path)
             if ocr_text.strip():
                 return await self._correct_with_answers_ocr(file_path, standard_answers, ocr_text)
             else:
                 logger.warning("OCR 未识别到文字，回退到图片模式")
 
-        # 图片模式（原有逻辑）
         prompt_text = (
             f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
             f"请严格按标准答案批改这份学生作业（文件名：{os.path.basename(file_path)}），"
@@ -606,10 +606,11 @@ class HomeworkAgent:
         messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_PROMPT), msg]
 
         response = await self.llm.ainvoke(messages)
-        parsed = _parse_json_safely(response.content or "")
+        raw = response.content or ""
+        parsed = _parse_json_safely(raw)
         if not isinstance(parsed, dict):
-            score = self._extract_score(response.content or "")
-            return response.content or "", score, None
+            score = self._extract_score(raw)
+            return raw, score, None
 
         details = parsed.get("details") or []
         if not isinstance(details, list):
@@ -618,7 +619,7 @@ class HomeworkAgent:
         total_score = parsed.get("total_score")
         try:
             score = int(total_score) if total_score is not None else self._extract_score(
-                json.dumps(parsed, ensure_ascii=False)
+                json.dumps(parsed, ensure_ascii=False), details
             )
         except Exception:
             score = None
@@ -627,8 +628,7 @@ class HomeworkAgent:
 
     async def _correct_with_answers_ocr(
         self, file_path: str, standard_answers: List[dict], ocr_text: str
-    ) -> tuple[str, Optional[int], Optional[List[dict]]]:
-        """OCR 模式：带标准答案的结构化批改。"""
+    ) -> Tuple[str, Optional[int], Optional[List[dict]]]:
         answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
         prompt_text = (
             f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
@@ -641,10 +641,11 @@ class HomeworkAgent:
 
         logger.info(f"使用 OCR 文字模式 + 标准答案批改: {os.path.basename(file_path)}")
         response = await self.llm.ainvoke(messages)
-        parsed = _parse_json_safely(response.content or "")
+        raw = response.content or ""
+        parsed = _parse_json_safely(raw)
         if not isinstance(parsed, dict):
-            score = self._extract_score(response.content or "")
-            return response.content or "", score, None
+            score = self._extract_score(raw)
+            return raw, score, None
 
         details = parsed.get("details") or []
         if not isinstance(details, list):
@@ -653,7 +654,7 @@ class HomeworkAgent:
         total_score = parsed.get("total_score")
         try:
             score = int(total_score) if total_score is not None else self._extract_score(
-                json.dumps(parsed, ensure_ascii=False)
+                json.dumps(parsed, ensure_ascii=False), details
             )
         except Exception:
             score = None
@@ -706,105 +707,114 @@ class HomeworkAgent:
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
-    # 流式批改
+    # 流式批改（保留旧接口，增加 OCR 支持）
     # ------------------------------------------------------------------
-    async def correct_stream(self, file_path: str, standard_answers: Optional[List[dict]] = None):
-        if not file_path:
-            raise ValueError("未提供文件路径")
-        filename = os.path.basename(file_path)
+    async def correct_stream(self, file_path: str = None, standard_answers: Optional[List[dict]] = None):
+        if file_path:
+            self._last_file_path = file_path
+            self._last_filename = os.path.basename(file_path)
+        elif self._last_file_path:
+            file_path = self._last_file_path
+        else:
+            raise ValueError("未提供文件路径，且没有缓存的上次文件路径")
+
         full_content = ""
+        final_score = None
+        final_details = None
 
-        # 如果有标准答案，使用 Markdown 流式批改模式
-        if standard_answers:
-            answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
+        async with self._semaphore:
+            if standard_answers:
+                answers_json = json.dumps(standard_answers, ensure_ascii=False, indent=2)
 
-            # OCR 模式
-            if self._ocr_enabled:
-                ocr_text = self._ocr_single(file_path)
-                if ocr_text.strip():
-                    prompt_text = (
-                        f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
-                        f"以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n"
-                        f"{ocr_text}\n\n"
-                        f"请严格按标准答案批改学生作答，必须批改全部 {len(standard_answers)} 道题。"
-                    )
-                    msg = HumanMessage(content=prompt_text)
-                    messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_OCR_PROMPT), msg]
+                if self._ocr_enabled:
+                    ocr_text = await asyncio.to_thread(self._ocr_single, file_path)
+                    if ocr_text.strip():
+                        prompt_text = (
+                            f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
+                            f"以下是通过 OCR 从学生作业图片（{self._last_filename}）中识别出的文字内容：\n\n"
+                            f"{ocr_text}\n\n"
+                            f"请严格按标准答案批改学生作答，必须批改全部 {len(standard_answers)} 道题。"
+                        )
+                        msg = HumanMessage(content=prompt_text)
+                        messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_OCR_PROMPT), msg]
 
-                    logger.info(f"流式批改使用 OCR + 标准答案模式: {filename}")
-                    async for chunk in self.llm.astream(messages):
-                        if chunk.content:
-                            full_content += chunk.content
-                            yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
+                        logger.info(f"流式批改使用 OCR + 标准答案模式: {self._last_filename}")
+                        async for chunk in self.llm.astream(messages):
+                            if chunk.content:
+                                full_content += chunk.content
+                                yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-                    stripped, details = self._extract_details_json(full_content)
-                    score = self._extract_score(stripped)
-                    yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
-                    yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
-                    return
+                        stripped, final_details = self._extract_details_json(full_content)
+                        final_score = self._extract_score(stripped, final_details)
+                        yield json.dumps({"event": "final_text", "text": stripped,
+                                          "score": final_score, "details": final_details},
+                                         ensure_ascii=False)
+                        return
 
-            # 图片模式 + 标准答案
-            prompt_text = (
-                f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
-                f"请严格按标准答案批改这份学生作业（文件名：{filename}），"
-                f"必须批改全部 {len(standard_answers)} 道题。"
-            )
-            msg = self._build_image_message(file_path, prompt_text)
-            messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_PROMPT), msg]
-
-            logger.info(f"流式批改使用图片 + 标准答案模式: {filename}")
-            async for chunk in self.llm.astream(messages):
-                if chunk.content:
-                    full_content += chunk.content
-                    yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
-
-            stripped, details = self._extract_details_json(full_content)
-            score = self._extract_score(stripped)
-            yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
-            yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
-            return
-
-        # 无标准答案模式（原有逻辑）
-        # OCR 模式
-        if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
-            if ocr_text.strip():
+                # image mode + standard answers
                 prompt_text = (
-                    f"以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n"
-                    f"{ocr_text}\n\n"
-                    "请根据以上 OCR 识别内容批改这份作业。"
+                    f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
+                    f"请严格按标准答案批改这份学生作业（文件名：{self._last_filename}），"
+                    f"必须批改全部 {len(standard_answers)} 道题。"
                 )
-                msg = HumanMessage(content=prompt_text)
-                messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
+                msg = self._build_image_message(file_path, prompt_text)
+                messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_PROMPT), msg]
 
-                logger.info(f"流式批改使用 OCR 文字模式: {filename}")
+                logger.info(f"流式批改使用图片 + 标准答案模式: {self._last_filename}")
                 async for chunk in self.llm.astream(messages):
                     if chunk.content:
                         full_content += chunk.content
                         yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-                stripped, details = self._extract_details_json(full_content)
-                score = self._extract_score(stripped)
-                yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
-                yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
+                stripped, final_details = self._extract_details_json(full_content)
+                final_score = self._extract_score(stripped, final_details)
+                yield json.dumps({"event": "final_text", "text": stripped,
+                                  "score": final_score, "details": final_details},
+                                 ensure_ascii=False)
                 return
 
-        # 图片模式
-        msg = self._build_image_message(
-            file_path,
-            f"请批改这份作业（文件名：{filename}）："
-        )
-        messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
+            # no standard answers
+            if self._ocr_enabled:
+                ocr_text = await asyncio.to_thread(self._ocr_single, file_path)
+                if ocr_text.strip():
+                    prompt_text = (
+                        f"以下是通过 OCR 从学生作业图片（{self._last_filename}）中识别出的文字内容：\n\n"
+                        f"{ocr_text}\n\n"
+                        "请根据以上 OCR 识别内容批改这份作业。"
+                    )
+                    msg = HumanMessage(content=prompt_text)
+                    messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
-        async for chunk in self.llm.astream(messages):
-            if chunk.content:
-                full_content += chunk.content
-                yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
+                    logger.info(f"流式批改使用 OCR 文字模式: {self._last_filename}")
+                    async for chunk in self.llm.astream(messages):
+                        if chunk.content:
+                            full_content += chunk.content
+                            yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
 
-        stripped, details = self._extract_details_json(full_content)
-        score = self._extract_score(stripped)
-        yield json.dumps({"event": "final_text", "text": stripped}, ensure_ascii=False)
-        yield json.dumps({"event": "result", "score": score, "details": details}, ensure_ascii=False)
+                    stripped, final_details = self._extract_details_json(full_content)
+                    final_score = self._extract_score(stripped, final_details)
+                    yield json.dumps({"event": "final_text", "text": stripped,
+                                      "score": final_score, "details": final_details},
+                                     ensure_ascii=False)
+                    return
+
+            # image mode, no standard answers
+            msg = self._build_image_message(
+                file_path,
+                f"请批改这份作业（文件名：{self._last_filename}）："
+            )
+            messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
+
+            async for chunk in self.llm.astream(messages):
+                if chunk.content:
+                    full_content += chunk.content
+                    yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
+
+            stripped, final_details = self._extract_details_json(full_content)
+            final_score = self._extract_score(stripped, final_details)
+            yield json.dumps({"event": "final_text", "text": stripped,
+                              "score": final_score, "details": final_details},
+                             ensure_ascii=False)
 
 
     @staticmethod
@@ -849,8 +859,8 @@ class HomeworkAgent:
         cleaned = re.sub(r'\n{4,}', '\n\n\n', cleaned)
         return cleaned.strip(), details
 
-    def _extract_score(self, text: str) -> Optional[int]:
-        """从批改文本中提取总分，支持多种常见格式；无法识别时从逐题详情汇总。"""
+    def _extract_score(self, text: str, details: Optional[List[dict]] = None) -> Optional[int]:
+        """Extract total score from grading text; fall back to summing per-question scores."""
         patterns = [
             r"总分[：:]\s*\*{0,2}(\d+)\*{0,2}\s*/\s*\*{0,2}100\*{0,2}",
             r"总分[：:]\s*\*{0,2}(\d+)\*{0,2}",
@@ -871,10 +881,9 @@ class HomeworkAgent:
                 except ValueError:
                     continue
 
-        # 从逐题详情汇总计算总分
-        if self.last_details:
+        if details:
             total = sum(
-                d.get("score", 0) for d in self.last_details
+                d.get("score", 0) for d in details
                 if isinstance(d, dict) and isinstance(d.get("score"), (int, float))
             )
             if total > 0:
