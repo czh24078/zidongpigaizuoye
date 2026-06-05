@@ -343,7 +343,7 @@
                     </div>
 
                     <div v-if="filteredBank.length === 0" class="empty-history">
-                        <el-empty :description="(bankKeyword || bankQuestionNo) ? '未找到匹配的题目' : '题库为空，可从“历史题目”中添加题目'" />
+                        <el-empty :description="(bankKeyword || bankQuestionNo) ? '未找到匹配的题目' : '题库为空，可从"历史题目"中添加题目'" />
                     </div>
 
                     <div v-else class="question-history-list">
@@ -378,11 +378,11 @@
                             <span>试卷生成</span>
                         </div>
                     </template>
-                    <div v-if=”allBankQuestions.length === 0” class=”empty-history”>
-                        <el-empty description=”题库为空，请先从”历史题目”或”AI出题”中添加题目到题库” />
+                    <div v-if="allBankQuestions.length === 0" class="empty-history">
+                        <el-empty description="题库为空，请先从[历史题目]或[AI出题]中添加题目到题库" />
                     </div>
-                    <div v-else class=”exam-paper-start”>
-                        <p>题库共 <strong>{{ allBankQuestions.length }}</strong> 题<span v-if=”examPaperSubject !== '不限'”>，{{ examPaperSubject }}可用 <strong>{{ examPaperAvailableCount }}</strong> 题</span></p>
+                    <div v-else class="exam-paper-start">
+                        <p>题库共 <strong>{{ allBankQuestions.length }}</strong> 题<span v-if="examPaperSubject !== '不限'">，{{ examPaperSubject }}可用 <strong>{{ examPaperAvailableCount }}</strong> 题</span></p>
                         <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin-top:16px;">
                             <el-form-item label="科目">
                                 <el-select v-model="examPaperSubject" style="width:140px;" @change="examPaperCount = examPaperAvailableCount > 0 ? Math.min(examPaperCount, examPaperAvailableCount) : examPaperCount">
@@ -636,6 +636,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=31"></script>
+    <script src="/static/js/app.js?v=32"></script>
 </body>
 </html>
