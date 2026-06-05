@@ -47,6 +47,7 @@ const app = createApp({
         const bankPage = ref(1);
         const bankTotal = ref(0);
         const bankPageSize = ref(20);
+        const allBankQuestions = ref([]);
 
         async function fetchQuestionBank() {
             try {
@@ -150,8 +151,8 @@ const app = createApp({
         });
 
         const examPaperAvailableCount = computed(() => {
-            if (examPaperSubject.value === '不限') return questionBank.value.length;
-            return questionBank.value.filter(q => q.subject === examPaperSubject.value).length;
+            if (examPaperSubject.value === '不限') return allBankQuestions.value.length;
+            return allBankQuestions.value.filter(q => q.subject === examPaperSubject.value).length;
         });
 
         // ==================== 工具方法 ====================
@@ -657,12 +658,20 @@ const app = createApp({
             return a;
         }
 
+        async function fetchAllBankQuestions() {
+            try {
+                const resp = await axios.get('/api/question-bank/all');
+                allBankQuestions.value = Array.isArray(resp.data) ? resp.data : [];
+            } catch { allBankQuestions.value = []; }
+        }
+
         function generateExamPaper() {
-            if (questionBank.value.length === 0) {
-                showMessage('题库为空，无法生成试卷', 'warning');
+            // 使用全量题库而非分页数据
+            if (allBankQuestions.value.length === 0) {
+                showMessage('题库为空，请先添加题目', 'warning');
                 return;
             }
-            let pool = questionBank.value;
+            let pool = allBankQuestions.value;
             if (examPaperSubject.value !== '不限') {
                 pool = pool.filter(q => q.subject === examPaperSubject.value);
                 if (pool.length === 0) {
@@ -896,6 +905,7 @@ const app = createApp({
             fetchHistory();
             fetchExams();
             fetchQuestionBank();
+            fetchAllBankQuestions();
 
             document.addEventListener('keydown', (e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -990,6 +1000,8 @@ const app = createApp({
             removeFromBank,
             clearBank,
             fetchQuestionBank,
+            fetchAllBankQuestions,
+            allBankQuestions,
 
             // 试卷生成方法
             generateExamPaper,
