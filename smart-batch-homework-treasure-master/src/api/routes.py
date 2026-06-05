@@ -149,13 +149,59 @@ async def _auto_add_to_bank(session: AsyncSession, exam_id: Optional[str], quest
     return added
 
 
-def _guess_subject(filename: str, question_text: str) -> str:
-    """根据文件名猜测科目，无法判断时返回'其他'。"""
-    fn = filename.lower()
-    for subj in ["语文", "数学", "物理", "历史"]:
-        if subj in fn:
-            return subj
-    return "其他"
+_SUBJECT_KEYWORDS = {
+    "语文": [
+        "拼音", "汉字", "笔画", "偏旁", "部首", "成语", "古诗", "文言文", "阅读理解",
+        "作文", "修辞", "病句", "默写", "诗人", "作者", "叙述", "论点", "论证", "翻译",
+        "标点", "词语", "句子", "段落", "写作", "赏析", "背诵", "近义词", "反义词",
+        "多音字", "形近字", "歇后语", "把字句", "被字句", "反问句", "陈述句",
+        "比喻", "拟人", "排比", "夸张", "对偶", "设问", "借代", "对比",
+        "唐诗", "宋词", "元曲", "论语", "诗经", "小说", "散文", "戏剧",
+        "《", "》", "李白", "杜甫", "白居易", "鲁迅",
+    ],
+    "数学": [
+        "方程", "函数", "几何", "三角", "代数", "计算", "概率", "统计", "面积", "体积",
+        "周长", "角度", "边长", "导数", "积分", "坐标", "数列", "不等式", "因式分解",
+        "平方", "立方", "根号", "解方程", "求值", "证明", "化简", "通分", "约分",
+        "最大公因数", "最小公倍数", "质数", "合数", "因数", "倍数", "分数", "小数",
+        "百分数", "比例", "一次函数", "二次函数", "勾股定理",
+        "多边形", "平行四边形", "长方形", "正方形", "三角形", "梯形", "圆",
+        "sin", "cos", "tan", "log", "x=", "y=", "象限", "抛物线",
+    ],
+    "物理": [
+        "力", "速度", "加速度", "质量", "密度", "压强", "电流", "电压", "电阻", "磁场",
+        "电场", "重力", "浮力", "功", "功率", "能量", "动量", "热量", "温度", "振动",
+        "波", "光", "折射", "反射", "牛顿", "焦耳", "瓦特", "欧姆", "安培", "伏特",
+        "电路", "串联", "并联", "电磁", "感应", "摩擦力", "弹力", "惯性", "动能",
+        "势能", "机械能", "比热容", "沸点", "熔点", "凝固", "汽化", "液化",
+        "原子", "分子", "电子", "质子", "中子", "核能",
+        "N/kg", "m/s", "kg/m³", "Ω", "Hz", "位移", "路程",
+    ],
+    "历史": [
+        "朝代", "皇帝", "战争", "革命", "条约", "变法", "制度", "封建", "帝国", "起义",
+        "统一", "分裂", "建国", "秦朝", "汉朝", "唐朝", "宋朝", "元朝", "明朝", "清朝",
+        "民国", "共和国", "鸦片", "甲午", "维新", "辛亥革命", "五四运动", "抗日战争",
+        "解放战争", "改革开放", "秦始皇", "汉武帝", "唐太宗", "宋太祖", "成吉思汗",
+        "朱元璋", "康熙", "乾隆", "孙中山", "毛泽东", "邓小平",
+        "丞相", "科举", "儒家", "道家", "法家", "丝绸之路", "郑和", "长城",
+        "工业革命", "世界大战", "冷战", "殖民", "独立", "宪法", "议会", "民主",
+    ],
+}
+
+
+def _guess_subject(filename: str = "", question_text: str = "") -> str:
+    """根据题目文本和文件名综合判断科目，无法判断时返回'其他'。"""
+    text = (question_text + " " + filename).lower()
+    scores = {}
+    for subj, keywords in _SUBJECT_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw.lower() in text)
+        if score > 0:
+            scores[subj] = score
+
+    if not scores:
+        return "其他"
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 2 else "其他"
 
 
 def _save_record_docx(
@@ -286,19 +332,39 @@ async def upload_exam(files: list[UploadFile] = File(...), session: AsyncSession
         raise HTTPException(status_code=500, detail="试题识别失败，请更换清晰的图片重试")
 
     display_name = " + ".join(filenames) if len(filenames) > 1 else filenames[0]
+    exam_id = str(uuid.uuid4())
 
-    # 自动将试题题目加入题库（去重），不创建历史试卷记录
-    bank_added = await _auto_add_to_bank(session, None, questions_data, display_name)
+    # 创建试题记录 + 同时加入题库
+    db_exam = Exam(
+        id=exam_id, filename=display_name, source="ai", created_at=datetime.now(),
+        questions=[Question(
+            question_no=q.get("question_no", str(i + 1)),
+            question_text=q.get("question_text", ""),
+            standard_answer=q.get("standard_answer", ""),
+            analysis=q.get("analysis", ""),
+            subject=q.get("subject") or _guess_subject(question_text=q.get("question_text", "")),
+        ) for i, q in enumerate(questions_data)],
+    )
+    session.add(db_exam)
+    bank_added = await _auto_add_to_bank(session, exam_id, questions_data, display_name)
 
     await session.commit()
-    return {"message": f"试题识别完成，{bank_added} 道题目已导入题库", "bank_added": bank_added, "filename": display_name}
+    return {
+        "message": f"试题识别完成，{bank_added} 道题目已导入题库",
+        "bank_added": bank_added,
+        "filename": display_name,
+        "exam_id": exam_id,
+        "exam": db_exam.to_pydantic().model_dump(mode="json"),
+    }
 
 
-@router.get("/exams", response_model=list[ExamResponse])
+@router.get("/exams")
 async def list_exams(
     keyword: Optional[str] = None,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     session: AsyncSession = Depends(get_db),
 ):
     stmt = select(Exam).order_by(Exam.created_at.desc())
@@ -320,16 +386,14 @@ async def list_exams(
 
     if keyword:
         kw = keyword.strip().lower()
-        filtered = []
-        for exam in exam_list:
-            matched = [q for q in exam.questions
-                       if kw in q.question_text.lower() or kw in q.standard_answer.lower()]
-            if matched:
-                exam.questions = matched
-                filtered.append(exam)
-        return filtered
+        exam_list = [e for e in exam_list if any(
+            kw in q.question_text.lower() or kw in q.standard_answer.lower()
+            for q in e.questions
+        )]
 
-    return exam_list
+    total = len(exam_list)
+    start = (page - 1) * page_size
+    return {"items": exam_list[start:start + page_size], "total": total}
 
 
 @router.get("/exam/{exam_id}", response_model=ExamResponse)
@@ -399,11 +463,9 @@ async def correct_homework(
 
     if AGENT_AVAILABLE and homework_agent is not None:
         try:
-            result_text = await homework_agent.correct(file_path, standard_answers=standard_answers)
-            agent_score = getattr(homework_agent, "last_score", None)
-            score = agent_score if agent_score is not None else score
-            raw_details = getattr(homework_agent, "last_details", None) or []
-            details_objs = _details_from_dicts(raw_details)
+            result_text, score, raw_details = await homework_agent.correct(
+                file_path, standard_answers=standard_answers)
+            details_objs = _details_from_dicts(raw_details or [])
         except Exception:
             result_text = MOCK_CORRECTION_RESULT
             if standard_answers:
@@ -415,7 +477,28 @@ async def correct_homework(
 
     correction_id = str(uuid.uuid4())
     created_at = datetime.now()
-    final_exam_id = exam.id if exam else None
+
+    # 已选试题时直接关联原始试题，不创建新的衍生 Exam
+    if exam:
+        final_exam_id = exam.id
+    elif details_objs:
+        # 无试题时，自动创建历史试题记录保存题目
+        final_exam_id = str(uuid.uuid4())
+        db_history_exam = Exam(
+            id=final_exam_id,
+            filename=f"[批改] {file.filename or 'unknown'}",
+            source="correction",
+            created_at=created_at,
+            questions=[Question(
+                question_no=d.question_no,
+                question_text=d.question_text,
+                standard_answer=d.standard_answer,
+                analysis=d.analysis,
+            ) for d in details_objs],
+        )
+        session.add(db_history_exam)
+    else:
+        final_exam_id = None
 
     record_path = _save_record_docx(
         correction_id=correction_id, filename=file.filename or "unknown",
@@ -436,24 +519,17 @@ async def correct_homework(
         db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
     session.add(db_correction)
 
-    # 自动将批改识别出的题目存入历史题目
+    # 自动将批改题目加入题库（去重+科目分类）
     if details_objs:
-        history_exam_id = str(uuid.uuid4())
-        final_exam_id = history_exam_id
-        db_history_exam = Exam(
-            id=history_exam_id,
-            filename=f"[批改] {file.filename or 'unknown'}",
-            source="correction",
-            created_at=created_at,
-            questions=[Question(
-                question_no=d.question_no,
-                question_text=d.question_text,
-                standard_answer=d.standard_answer,
-                analysis=d.analysis,
-            ) for d in details_objs],
-        )
-        session.add(db_history_exam)
-        db_correction.exam_id = history_exam_id
+        questions_data = [{
+            "question_no": d.question_no,
+            "question_text": d.question_text,
+            "standard_answer": d.standard_answer,
+            "analysis": d.analysis,
+            "subject": _guess_subject(question_text=d.question_text),
+        } for d in details_objs]
+        await _auto_add_to_bank(session, final_exam_id, questions_data,
+                                f"[批改] {file.filename or 'unknown'}")
 
     await session.commit()
 
@@ -488,6 +564,8 @@ async def correct_homework_stream(
         try:
             yield f"data: {json.dumps({'event': 'start', 'message': '开始批改...'}, ensure_ascii=False)}\n\n"
             full_content = ""
+            stream_score: Optional[int] = None
+            stream_details: list[dict] = []
 
             if AGENT_AVAILABLE and homework_agent is not None:
                 try:
@@ -497,6 +575,11 @@ async def correct_homework_stream(
                             chunk_data = json.loads(chunk)
                             if chunk_data.get('event') == 'content':
                                 full_content += chunk_data.get('text', '')
+                            elif chunk_data.get('event') == 'final_text':
+                                full_content = chunk_data.get('text', full_content)
+                            elif chunk_data.get('event') == 'result':
+                                stream_score = chunk_data.get('score')
+                                stream_details = chunk_data.get('details') or []
                         except Exception:
                             pass
                 except Exception as e:
@@ -513,16 +596,12 @@ async def correct_homework_stream(
                     except Exception:
                         pass
 
-            # 'end' 事件将在数据库保存完成后发出，确保前端刷新时数据已入库
-
-            score = getattr(homework_agent, "last_score", None) if AGENT_AVAILABLE else 85
-            details_objs = _details_from_dicts(
-                getattr(homework_agent, "last_details", None) or []
-            ) if AGENT_AVAILABLE else []
+            score = stream_score if AGENT_AVAILABLE else 85
+            details_objs = _details_from_dicts(stream_details) if AGENT_AVAILABLE else []
 
             correction_id = str(uuid.uuid4())
             created_at = datetime.now()
-            result_text = full_content or getattr(homework_agent, "_last_stream_result", "")
+            result_text = full_content
 
             record_path = _save_record_docx(
                 correction_id=correction_id, filename=file.filename or "unknown",
@@ -533,29 +612,16 @@ async def correct_homework_stream(
             summary = f"作业批改完成，总分 {score} 分。" if score is not None else "作业批改完成。"
             summary += f"（基于试题 {exam.filename}）" if exam else ""
 
-            # 因为 event_generator 闭包捕获了外层的 session，但 SSE 流结束后
-            # session 可能已关闭。这里我们创建一个新的 DB session 来持久化。
             from src.database import AsyncSessionLocal
             async with AsyncSessionLocal() as save_session:
-                db_correction = Correction(
-                    id=correction_id, filename=file.filename or "unknown",
-                    result=result_text, score=score, summary=summary,
-                    exam_id=exam.id if exam else None,
-                    record_path=record_path, created_at=created_at,
-                )
-                for d in details_objs:
-                    db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
-                save_session.add(db_correction)
-
-                final_exam_id = exam.id if exam else None
-
-                # 自动将批改识别出的题目存入历史题目
-                if details_objs:
+                # 已选试题时直接关联原始试题
+                if exam:
+                    final_exam_id = exam.id
+                elif details_objs:
                     from src.models.db_models import Question as QDB
-                    history_exam_id = str(uuid.uuid4())
-                    final_exam_id = history_exam_id
+                    final_exam_id = str(uuid.uuid4())
                     db_history_exam = Exam(
-                        id=history_exam_id,
+                        id=final_exam_id,
                         filename=f"[批改] {file.filename or 'unknown'}",
                         source="correction",
                         created_at=created_at,
@@ -567,11 +633,33 @@ async def correct_homework_stream(
                         ) for d in details_objs],
                     )
                     save_session.add(db_history_exam)
-                    db_correction.exam_id = history_exam_id
+                else:
+                    final_exam_id = None
+
+                db_correction = Correction(
+                    id=correction_id, filename=file.filename or "unknown",
+                    result=result_text, score=score, summary=summary,
+                    exam_id=final_exam_id,
+                    record_path=record_path, created_at=created_at,
+                )
+                for d in details_objs:
+                    db_correction.details.append(CorrectionDetailDB.from_pydantic(d))
+                save_session.add(db_correction)
+
+                # 自动将批改题目加入题库
+                if details_objs:
+                    questions_data = [{
+                        "question_no": d.question_no,
+                        "question_text": d.question_text,
+                        "standard_answer": d.standard_answer,
+                        "analysis": d.analysis,
+                        "subject": _guess_subject(question_text=d.question_text),
+                    } for d in details_objs]
+                    await _auto_add_to_bank(save_session, final_exam_id, questions_data,
+                                            f"[批改] {file.filename or 'unknown'}")
 
                 await save_session.commit()
 
-            # 数据库保存完成后再通知前端，确保刷新时数据已入库
             yield f"data: {json.dumps({'event': 'end', 'message': '批改完成'}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
@@ -594,13 +682,22 @@ def _mock_stream_chunks():
 # 历史 & 记录文件下载
 # =====================================================================
 
-@router.get("/history", response_model=list[HistoryItem])
-async def get_history(session: AsyncSession = Depends(get_db)):
+@router.get("/history")
+async def get_history(
+    page: int = 1,
+    page_size: int = 20,
+    session: AsyncSession = Depends(get_db),
+):
+    # 先查总数
+    count_result = await session.execute(select(func.count(Correction.id)))
+    total = count_result.scalar() or 0
+    # 分页查询
     result = await session.execute(
         select(Correction).order_by(Correction.created_at.desc())
+        .offset((page - 1) * page_size).limit(page_size)
     )
     corrections = result.scalars().all()
-    return [c.to_history_item() for c in corrections]
+    return {"items": [c.to_history_item() for c in corrections], "total": total}
 
 
 @router.get("/correction/{correction_id}/record")
@@ -662,33 +759,44 @@ async def export_exam_paper(payload: list[dict]):
 # 题库接口
 # =====================================================================
 
-@router.get("/question-bank", response_model=list[QuestionBankItemSchema])
+@router.get("/question-bank")
 async def list_question_bank(
     keyword: Optional[str] = None,
     question_no: Optional[str] = None,
     subject: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     session: AsyncSession = Depends(get_db),
 ):
     stmt = select(QuestionBankItem).order_by(QuestionBankItem.bank_no.asc())
+    count_stmt = select(func.count(QuestionBankItem.id))
 
     if keyword:
         kw = keyword.strip()
-        stmt = stmt.where(or_(
+        cond = or_(
             QuestionBankItem.question_text.contains(kw),
             QuestionBankItem.standard_answer.contains(kw),
             QuestionBankItem.analysis.contains(kw),
-        ))
+        )
+        stmt = stmt.where(cond)
+        count_stmt = count_stmt.where(cond)
     if subject:
         stmt = stmt.where(QuestionBankItem.subject == subject.strip())
+        count_stmt = count_stmt.where(QuestionBankItem.subject == subject.strip())
     if question_no:
         try:
-            stmt = stmt.where(QuestionBankItem.bank_no == int(question_no.strip()))
+            no = int(question_no.strip())
+            stmt = stmt.where(QuestionBankItem.bank_no == no)
+            count_stmt = count_stmt.where(QuestionBankItem.bank_no == no)
         except ValueError:
-            return []
+            return {"items": [], "total": 0}
 
+    total_result = await session.execute(count_stmt)
+    total = total_result.scalar() or 0
+    stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     result = await session.execute(stmt)
     items = result.scalars().all()
-    return [item.to_pydantic() for item in items]
+    return {"items": [item.to_pydantic() for item in items], "total": total}
 
 
 @router.post("/question-bank", response_model=QuestionBankItemSchema)

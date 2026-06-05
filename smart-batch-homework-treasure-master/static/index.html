@@ -7,7 +7,7 @@
     <!-- Element Plus CSS -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
     <!-- 自定义样式 -->
-    <link rel="stylesheet" href="/static/css/style.css?v=22">
+    <link rel="stylesheet" href="/static/css/style.css?v=23">
 </head>
 <body>
     <div id="app">
@@ -276,6 +276,10 @@
                             </el-button>
                         </div>
                     </div>
+                    <div v-if="examTotal > examPageSize" style="margin-top:16px;display:flex;justify-content:center;">
+                        <el-pagination layout="prev,pager,next" :total="examTotal" :page-size="examPageSize"
+                            v-model:current-page="examPage" @current-change="onExamPageChange" small />
+                    </div>
                 </el-card>
 
                 <!-- 单题详情弹窗 -->
@@ -356,6 +360,10 @@
                                 <el-icon><delete /></el-icon>移除
                             </el-button>
                         </div>
+                    </div>
+                    <div v-if="bankTotal > bankPageSize" style="margin-top:16px;display:flex;justify-content:center;">
+                        <el-pagination layout="prev,pager,next" :total="bankTotal" :page-size="bankPageSize"
+                            v-model:current-page="bankPage" @current-change="onBankPageChange" small />
                     </div>
                 </el-card>
             </div>
@@ -579,6 +587,10 @@
                         </el-card>
                     </el-timeline-item>
                 </el-timeline>
+                <div v-if="historyTotal > historyPageSize" style="margin-top:16px;display:flex;justify-content:center;">
+                    <el-pagination layout="prev,pager,next" :total="historyTotal" :page-size="historyPageSize"
+                        v-model:current-page="historyPage" @current-change="onHistoryPageChange" small />
+                </div>
             </el-card>
             </main>
         </div>
@@ -624,6 +636,6 @@
     <script src="https://unpkg.com/@element-plus/icons-vue/dist/index.iife.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
     <script>if(typeof marked==='undefined'&&typeof window.marked!=='undefined'){window.marked=window.marked;}</script>
-    <script src="/static/js/app.js?v=27"></script>
+    <script src="/static/js/app.js?v=28"></script>
 </body>
 </html>

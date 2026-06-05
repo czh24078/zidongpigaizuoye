@@ -37,11 +37,27 @@ const app = createApp({
         const bankQuestionNo = ref('');
         const bankKeyword = ref('');
 
+        // 分页状态
+        const examPage = ref(1);
+        const examTotal = ref(0);
+        const examPageSize = ref(20);
+        const historyPage = ref(1);
+        const historyTotal = ref(0);
+        const historyPageSize = ref(20);
+        const bankPage = ref(1);
+        const bankTotal = ref(0);
+        const bankPageSize = ref(20);
+
         async function fetchQuestionBank() {
             try {
-                const resp = await axios.get('/api/question-bank');
-                questionBank.value = Array.isArray(resp.data) ? resp.data : [];
-            } catch { questionBank.value = []; }
+                const params = { page: bankPage.value, page_size: bankPageSize.value };
+                if (bankKeyword.value) params.keyword = bankKeyword.value;
+                if (bankQuestionNo.value) params.question_no = bankQuestionNo.value;
+                const resp = await axios.get('/api/question-bank', { params });
+                const data = resp.data;
+                questionBank.value = Array.isArray(data) ? data : (data.items || []);
+                bankTotal.value = data.total || 0;
+            } catch { questionBank.value = []; bankTotal.value = 0; }
         }
 
         // 试卷生成状态
@@ -407,20 +423,16 @@ const app = createApp({
         async function fetchHistory() {
             try {
                 const response = await axios.get('/api/history', {
+                    params: { page: historyPage.value, page_size: historyPageSize.value },
                     timeout: 30000
                 });
-
-                if (Array.isArray(response.data)) {
-                    history.value = response.data;
-                } else if (response.data && Array.isArray(response.data.history)) {
-                    history.value = response.data.history;
-                } else {
-                    history.value = [];
-                }
+                const data = response.data;
+                history.value = Array.isArray(data) ? data : (data.items || []);
+                historyTotal.value = data.total || 0;
             } catch (error) {
                 console.error('获取历史记录失败:', error);
-                // 静默失败，不弹窗打扰用户
                 history.value = [];
+                historyTotal.value = 0;
             }
         }
 
@@ -542,11 +554,16 @@ const app = createApp({
 
         async function fetchExams() {
             try {
-                const resp = await axios.get('/api/exams');
-                exams.value = Array.isArray(resp.data) ? resp.data : [];
+                const params = { page: examPage.value, page_size: examPageSize.value };
+                if (historyKeyword.value) params.keyword = historyKeyword.value;
+                const resp = await axios.get('/api/exams', { params });
+                const data = resp.data;
+                exams.value = Array.isArray(data) ? data : (data.items || []);
+                examTotal.value = data.total || 0;
             } catch (error) {
                 console.error(error);
                 exams.value = [];
+                examTotal.value = 0;
             }
         }
 
@@ -926,6 +943,14 @@ const app = createApp({
             historyKeyword,
             bankQuestionNo,
             bankKeyword,
+
+            // 分页状态
+            examPage, examTotal, examPageSize,
+            historyPage, historyTotal, historyPageSize,
+            bankPage, bankTotal, bankPageSize,
+            onExamPageChange(newPage) { examPage.value = newPage; fetchExams(); },
+            onHistoryPageChange(newPage) { historyPage.value = newPage; fetchHistory(); },
+            onBankPageChange(newPage) { bankPage.value = newPage; fetchQuestionBank(); },
 
             // 试卷生成状态
             examPaperSubject,
