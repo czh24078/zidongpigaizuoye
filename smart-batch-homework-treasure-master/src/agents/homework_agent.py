@@ -91,13 +91,13 @@ EXTRACT_EXAM_OCR_PROMPT = """你是一位严谨的学科老师，擅长审题与
 
 说明：
 - OCR 识别可能存在误差（如空格、符号错误、顺序紊乱等），请结合上下文智能纠正。
-- 可能包含多张图片的 OCR 结果，它们可能是“题目卷”、“答案卷”或“题目+答案合卷”。
+- 可能包含多张图片的 OCR 结果，它们可能是"题目卷"、"答案卷"或"题目+答案合卷"。
 - 请综合所有图片的 OCR 内容进行分析。
 
 要求：
 1. 忠实还原每道题目的题号与题干文本（公式可用 LaTeX 或文字描述）。
-2. 为每题给出明确、正确的“标准答案”。
-3. 为每题补充简要的“解题分析/要点”（可选，若题目较简单可留空字符串）。
+2. 为每题给出明确、正确的"标准答案"。
+3. 为每题补充简要的"解题分析/要点"（可选，若题目较简单可留空字符串）。
 4. 严格以 JSON 数组返回，不要输出任何其它解释、前后缀或代码块围栏；若必须使用代码块，请使用 ```json 包裹。
 
 JSON 结构（每个元素必须包含以下字段）：
@@ -537,7 +537,7 @@ class HomeworkAgent:
     # ------------------------------------------------------------------
     async def correct(self, file_path: str, standard_answers: Optional[List[dict]] = None
                      ) -> tuple[str, Optional[int], Optional[List[dict]]]:
-        “””批改作业，返回 (markdown, score, details)。”””
+        """批改作业，返回 (markdown, score, details)。"""
         filename = os.path.basename(file_path)
 
         if standard_answers:
@@ -549,34 +549,34 @@ class HomeworkAgent:
             if ocr_text.strip():
                 return await self._correct_with_ocr_text(file_path, ocr_text, filename)
             else:
-                logger.warning(“OCR 未识别到文字，回退到图片模式”)
+                logger.warning("OCR 未识别到文字，回退到图片模式")
 
         # 图片模式（原有逻辑）
         msg = self._build_image_message(
             file_path,
-            f”请批改这份作业（文件名：{filename}）：”
+            f"请批改这份作业（文件名：{filename}）："
         )
         messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
         response = await self.llm.ainvoke(messages)
-        result = response.content or “”
+        result = response.content or ""
         result, details = self._extract_details_json(result)
         score = self._extract_score(result)
         return result, score, details
 
     async def _correct_with_ocr_text(self, file_path: str, ocr_text: str, filename: str
                                     ) -> tuple[str, Optional[int], Optional[List[dict]]]:
-        “””使用 OCR 文字进行无标准答案批改。”””
+        """使用 OCR 文字进行无标准答案批改。"""
         prompt_text = (
-            f”以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n”
-            f”{ocr_text}\n\n”
-            “请根据以上 OCR 识别内容批改这份作业。”
+            f"以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n"
+            f"{ocr_text}\n\n"
+            "请根据以上 OCR 识别内容批改这份作业。"
         )
         msg = HumanMessage(content=prompt_text)
         messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
-        logger.info(f”使用 OCR 文字模式批改作业: {filename}”)
+        logger.info(f"使用 OCR 文字模式批改作业: {filename}")
         response = await self.llm.ainvoke(messages)
-        result = response.content or “”
+        result = response.content or ""
         result, details = self._extract_details_json(result)
         score = self._extract_score(result)
         return result, score, details
