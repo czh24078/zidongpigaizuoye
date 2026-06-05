@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -391,6 +392,7 @@ class HomeworkAgent:
             timeout=300,
         )
         self._ocr_enabled = config.OCR_ENABLED and ocr_available()
+        self._semaphore = asyncio.Semaphore(5)
         if self._ocr_enabled:
             logger.info("OCR 已启用，将先提取文字再交给大模型")
         else:
@@ -426,10 +428,10 @@ class HomeworkAgent:
     # ------------------------------------------------------------------
     # OCR 预处理
     # ------------------------------------------------------------------
-    def _ocr_single(self, file_path: str) -> str:
+    async def _ocr_single(self, file_path: str) -> str:
         """对单张图片进行 OCR，返回识别文字。"""
         try:
-            text = ocr_image(file_path)
+            text = await asyncio.to_thread(ocr_image, file_path)
             if text.strip():
                 return text
             logger.warning(f"OCR 未识别到文字: {file_path}")
@@ -438,9 +440,20 @@ class HomeworkAgent:
             logger.error(f"OCR 失败: {file_path}, 错误: {e}")
             return ""
 
-    def _ocr_multiple(self, file_paths: List[str]) -> List[str]:
+    async def _ocr_multiple(self, file_paths: List[str]) -> List[str]:
         """对多张图片进行 OCR，返回每张图片的识别文字。"""
-        return [self._ocr_single(fp) for fp in file_paths]
+        return [await self._ocr_single(fp) for fp in file_paths]
+
+    async def _llm_invoke(self, messages):
+        """带并发限流的 LLM 调用。"""
+        async with self._semaphore:
+            return await self._llm_invoke(messages)
+
+    async def _llm_stream(self, messages):
+        """带并发限流的 LLM 流式调用。"""
+        async with self._semaphore:
+            async for chunk in self._llm_stream(messages):
+                yield chunk
 
     # ------------------------------------------------------------------
     # 提取试题 & 生成标准答案
@@ -453,7 +466,7 @@ class HomeworkAgent:
 
         # OCR 模式：先提取文字再交给大模型
         if self._ocr_enabled:
-            ocr_texts = self._ocr_multiple(file_paths)
+            ocr_texts = await self._ocr_multiple(file_paths)
             # 检查是否有有效的 OCR 结果
             has_text = any(t.strip() for t in ocr_texts)
             if has_text:
@@ -475,7 +488,7 @@ class HomeworkAgent:
             )
 
         messages = [SystemMessage(content=EXTRACT_EXAM_PROMPT), msg]
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         parsed = _parse_json_safely(response.content or "")
         if not isinstance(parsed, list):
             raise ValueError("模型返回内容无法解析为题目列表 JSON")
@@ -514,7 +527,7 @@ class HomeworkAgent:
         messages = [SystemMessage(content=EXTRACT_EXAM_OCR_PROMPT), msg]
     
         logger.info(f"使用 OCR 文字模式提取试题，共 {len(file_paths)} 张图片")
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         parsed = _parse_json_safely(response.content or "")
         if not isinstance(parsed, list):
             raise ValueError("模型返回内容无法解析为题目列表 JSON")
@@ -545,7 +558,7 @@ class HomeworkAgent:
 
         # OCR 模式：先提取文字再交给大模型
         if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
+            ocr_text = await self._ocr_single(file_path)
             if ocr_text.strip():
                 return await self._correct_with_ocr_text(file_path, ocr_text, filename)
             else:
@@ -557,7 +570,7 @@ class HomeworkAgent:
             f"请批改这份作业（文件名：{filename}）："
         )
         messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         result = response.content or ""
         result, details = self._extract_details_json(result)
         score = self._extract_score(result, details)
@@ -575,7 +588,7 @@ class HomeworkAgent:
         messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
         logger.info(f"使用 OCR 文字模式批改作业: {filename}")
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         result = response.content or ""
         result, details = self._extract_details_json(result)
         score = self._extract_score(result, details)
@@ -590,7 +603,7 @@ class HomeworkAgent:
 
         # OCR 模式
         if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
+            ocr_text = await self._ocr_single(file_path)
             if ocr_text.strip():
                 return await self._correct_with_answers_ocr(file_path, standard_answers, ocr_text)
             else:
@@ -605,7 +618,7 @@ class HomeworkAgent:
         msg = self._build_image_message(file_path, prompt_text)
         messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_PROMPT), msg]
 
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         parsed = _parse_json_safely(response.content or "")
         if not isinstance(parsed, dict):
             score = self._extract_score(response.content or "")
@@ -640,7 +653,7 @@ class HomeworkAgent:
         messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_OCR_PROMPT), msg]
 
         logger.info(f"使用 OCR 文字模式 + 标准答案批改: {os.path.basename(file_path)}")
-        response = await self.llm.ainvoke(messages)
+        response = await self._llm_invoke(messages)
         parsed = _parse_json_safely(response.content or "")
         if not isinstance(parsed, dict):
             score = self._extract_score(response.content or "")
@@ -720,7 +733,7 @@ class HomeworkAgent:
 
             # OCR 模式
             if self._ocr_enabled:
-                ocr_text = self._ocr_single(file_path)
+                ocr_text = await self._ocr_single(file_path)
                 if ocr_text.strip():
                     prompt_text = (
                         f"试题标准答案（共 {len(standard_answers)} 道题，JSON）如下：\n{answers_json}\n\n"
@@ -732,7 +745,7 @@ class HomeworkAgent:
                     messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_OCR_PROMPT), msg]
 
                     logger.info(f"流式批改使用 OCR + 标准答案模式: {filename}")
-                    async for chunk in self.llm.astream(messages):
+                    async for chunk in self._llm_stream(messages):
                         if chunk.content:
                             full_content += chunk.content
                             yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
@@ -753,7 +766,7 @@ class HomeworkAgent:
             messages = [SystemMessage(content=CORRECT_WITH_ANSWERS_STREAM_PROMPT), msg]
 
             logger.info(f"流式批改使用图片 + 标准答案模式: {filename}")
-            async for chunk in self.llm.astream(messages):
+            async for chunk in self._llm_stream(messages):
                 if chunk.content:
                     full_content += chunk.content
                     yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
@@ -767,7 +780,7 @@ class HomeworkAgent:
         # 无标准答案模式（原有逻辑）
         # OCR 模式
         if self._ocr_enabled:
-            ocr_text = self._ocr_single(file_path)
+            ocr_text = await self._ocr_single(file_path)
             if ocr_text.strip():
                 prompt_text = (
                     f"以下是通过 OCR 从学生作业图片（{filename}）中识别出的文字内容：\n\n"
@@ -778,7 +791,7 @@ class HomeworkAgent:
                 messages = [SystemMessage(content=SYSTEM_PROMPT_OCR), msg]
 
                 logger.info(f"流式批改使用 OCR 文字模式: {filename}")
-                async for chunk in self.llm.astream(messages):
+                async for chunk in self._llm_stream(messages):
                     if chunk.content:
                         full_content += chunk.content
                         yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
@@ -796,7 +809,7 @@ class HomeworkAgent:
         )
         messages = [SystemMessage(content=SYSTEM_PROMPT), msg]
 
-        async for chunk in self.llm.astream(messages):
+        async for chunk in self._llm_stream(messages):
             if chunk.content:
                 full_content += chunk.content
                 yield json.dumps({"event": "content", "text": chunk.content}, ensure_ascii=False)
@@ -940,7 +953,8 @@ class HomeworkAgent:
             SystemMessage(content=system_text),
             HumanMessage(content=prompt_text),
         ]
-        response = await gen_llm.ainvoke(messages)
+        async with self._semaphore:
+            response = await gen_llm.ainvoke(messages)
         parsed = _parse_json_safely(response.content or "")
         if not isinstance(parsed, list):
             raise ValueError("模型返回内容无法解析为题目列表 JSON")
