@@ -230,6 +230,21 @@ def _guess_subject(filename: str = "", question_text: str = "") -> str:
     return best if scores[best] >= 2 else "其他"
 
 
+def _is_valid_question(question_text: str, standard_answer: str) -> bool:
+    """判断题目是否完整有效，过滤残缺题目。"""
+    if not question_text or not standard_answer:
+        return False
+    qt = question_text.strip()
+    sa = standard_answer.strip()
+    # 题干或答案太短（<5字符）视为不完整
+    if len(qt) < 5 or len(sa) < 1:
+        return False
+    # 题干仅含单个字符/数字/符号视为不完整
+    if len(qt) < 3 and not any('一' <= c <= '鿿' for c in qt):
+        return False
+    return True
+
+
 def _save_record_docx(
     correction_id: str, filename: str, exam: Optional[ExamResponse],
     score: Optional[int], details: list[CorrectionDetail],
@@ -501,6 +516,13 @@ async def correct_homework(
         if standard_answers:
             details_objs = _details_from_dicts(MOCK_CORRECTION_DETAILS)
 
+    # 过滤掉不完整的题目
+    if details_objs:
+        before = len(details_objs)
+        details_objs = [d for d in details_objs if _is_valid_question(d.question_text, d.standard_answer)]
+        if len(details_objs) < before:
+            logger.info(f"过滤掉 {before - len(details_objs)} 道不完整题目")
+
     correction_id = str(uuid.uuid4())
     created_at = datetime.now()
 
@@ -623,6 +645,13 @@ async def correct_homework_stream(
 
             score = stream_score if AGENT_AVAILABLE else 85
             details_objs = _details_from_dicts(stream_details) if AGENT_AVAILABLE else []
+
+            # 过滤掉不完整的题目
+            if details_objs:
+                before = len(details_objs)
+                details_objs = [d for d in details_objs if _is_valid_question(d.question_text, d.standard_answer)]
+                if len(details_objs) < before:
+                    logger.info(f"流式批改过滤掉 {before - len(details_objs)} 道不完整题目")
 
             correction_id = str(uuid.uuid4())
             created_at = datetime.now()
