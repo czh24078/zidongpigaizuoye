@@ -666,7 +666,6 @@ const app = createApp({
         }
 
         async function generateExamPaper() {
-            // 先刷新全量题库再出题
             await fetchAllBankQuestions();
             if (allBankQuestions.value.length === 0) {
                 showMessage('题库为空，请先添加题目', 'warning');
