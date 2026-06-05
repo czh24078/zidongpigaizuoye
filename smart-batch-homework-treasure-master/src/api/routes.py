@@ -603,7 +603,6 @@ async def correct_homework_stream(
                                 full_content += chunk_data.get('text', '')
                             elif chunk_data.get('event') == 'final_text':
                                 full_content = chunk_data.get('text', full_content)
-                            elif chunk_data.get('event') == 'result':
                                 stream_score = chunk_data.get('score')
                                 stream_details = chunk_data.get('details') or []
                         except Exception:
